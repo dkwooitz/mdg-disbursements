@@ -16,8 +16,46 @@
 <link rel="stylesheet" href="styles.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<!-- Supabase client library (used for sign-in and, later, the database) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<style>
+  /* ---------- Login screen (matches the active theme) ---------- */
+  .auth-gate{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:var(--bg);padding:24px;}
+  .auth-gate.authed{display:none;}
+  .auth-card{width:100%;max-width:360px;background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:28px 24px;}
+  .auth-logo{font-size:20px;font-weight:600;color:var(--text);text-align:center;}
+  .auth-sub{font-size:14px;color:var(--text-dim);text-align:center;margin:4px 0 20px;}
+  .auth-fields label{display:block;font-size:12px;color:var(--text-dim);margin:12px 0 4px;}
+  .auth-hint{opacity:.7;}
+  .auth-fields input{width:100%;box-sizing:border-box;background:var(--field);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-size:14px;}
+  .auth-fields input:focus{outline:none;border-color:var(--accent);}
+  .auth-error{color:var(--danger);font-size:13px;min-height:18px;margin:10px 0 4px;text-align:center;}
+  .auth-btn{width:100%;box-sizing:border-box;border-radius:8px;padding:11px;font-size:14px;font-weight:600;cursor:pointer;border:1px solid transparent;margin-top:8px;}
+  .auth-btn-primary{background:var(--accent);color:#fff;}
+  .auth-btn-ghost{background:transparent;color:var(--text);border-color:var(--border);}
+</style>
 </head>
 <body>
+
+<!-- Login screen: covers the app until the user signs in -->
+<div id="authGate" class="auth-gate">
+  <div class="auth-card">
+    <div class="auth-logo">MDG Disbursements</div>
+    <div class="auth-sub" id="authSub">Sign in to continue</div>
+    <div class="auth-fields">
+      <label>Full name <span class="auth-hint">(needed for a new account)</span></label>
+      <input id="authName" type="text" placeholder="Your name" autocomplete="name" />
+      <label>Email</label>
+      <input id="authEmail" type="email" placeholder="you@example.com" autocomplete="email" />
+      <label>Password</label>
+      <input id="authPass" type="password" placeholder="At least 6 characters" autocomplete="current-password" />
+    </div>
+    <div id="authError" class="auth-error"></div>
+    <button id="authSignIn" class="auth-btn auth-btn-primary" type="button">Sign in</button>
+    <button id="authSignUp" class="auth-btn auth-btn-ghost" type="button">Create an account</button>
+  </div>
+</div>
+
 <div class="app">
 
   <!-- Sidebar -->
@@ -450,5 +488,73 @@
 </div>
 
 <script src="script.js"></script>
+
+<!-- ===== Authentication (email + password via Supabase) ===== -->
+<script>
+(function () {
+  // Same Supabase project the AI proxy already uses. Anon key is public/safe in the browser.
+  var SB_URL  = 'https://gvdrncjdveldpjiecspv.supabase.co';
+  var SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd2ZHJuY2pkdmVsZHBqaWVjc3B2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI5NjUwMzQsImV4cCI6MjA5ODU0MTAzNH0._q3DG9_mELkAHETVymtfwi9-swm2QL91TrKEXo6AaLU';
+  var sb = window.supabase.createClient(SB_URL, SB_ANON);
+
+  var gate  = document.getElementById('authGate');
+  var email = document.getElementById('authEmail');
+  var pass  = document.getElementById('authPass');
+  var name  = document.getElementById('authName');
+  var err   = document.getElementById('authError');
+  var sub   = document.getElementById('authSub');
+
+  function showError(msg) { err.textContent = msg || ''; }
+  function hideGate() { gate.classList.add('authed'); }
+
+  // Show the signed-in person's details in the account menu.
+  function reflectUser(user) {
+    if (!user) return;
+    var meta = user.user_metadata || {};
+    var nameNode  = document.querySelector('.account-name');
+    var emailNode = document.querySelector('.account-email');
+    var roleNode  = document.querySelector('.account-role');
+    if (nameNode)  nameNode.textContent  = meta.full_name || user.email;
+    if (emailNode) emailNode.textContent = user.email;
+    if (roleNode)  roleNode.textContent  = 'User';
+  }
+
+  // The app's Logout buttons (wired in script.js) call this.
+  window.mdgAuth = {
+    signOut: function () { sb.auth.signOut().then(function () { location.reload(); }); }
+  };
+
+  // On load: if already signed in, reveal the app; otherwise keep the login screen.
+  sb.auth.getSession().then(function (res) {
+    var session = res.data.session;
+    if (session) { reflectUser(session.user); hideGate(); }
+  });
+
+  document.getElementById('authSignIn').addEventListener('click', function () {
+    showError('');
+    sb.auth.signInWithPassword({
+      email: (email.value || '').trim(),
+      password: pass.value || ''
+    }).then(function (res) {
+      if (res.error) { showError(res.error.message); return; }
+      reflectUser(res.data.user);
+      hideGate();
+    });
+  });
+
+  document.getElementById('authSignUp').addEventListener('click', function () {
+    showError('');
+    sb.auth.signUp({
+      email: (email.value || '').trim(),
+      password: pass.value || '',
+      options: { data: { full_name: (name.value || '').trim() } }
+    }).then(function (res) {
+      if (res.error) { showError(res.error.message); return; }
+      if (res.data.session) { reflectUser(res.data.user); hideGate(); }   // email confirmation off
+      else { sub.textContent = 'Account created — now press Sign in.'; }   // email confirmation on
+    });
+  });
+})();
+</script>
 </body>
 </html>

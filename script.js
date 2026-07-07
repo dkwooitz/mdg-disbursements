@@ -134,11 +134,15 @@
   if (setHubBtn) setHubBtn.addEventListener('click', () =>
     showToast('“Back to Hub” will link to the Master Drilling hub once it’s connected.', 5000));
   const setLogoutBtn = document.getElementById('setLogout');
-  if (setLogoutBtn) setLogoutBtn.addEventListener('click', showPoster);
+  if (setLogoutBtn) setLogoutBtn.addEventListener('click', function () {
+    if (window.mdgAuth) window.mdgAuth.signOut(); else showPoster();
+  });
 
-  // Account-menu logout also shows the poster
+  // Account-menu logout signs the user out
   const menuLogout = document.querySelector('.btn-logout');
-  if (menuLogout) menuLogout.addEventListener('click', showPoster);
+  if (menuLogout) menuLogout.addEventListener('click', function () {
+    if (window.mdgAuth) window.mdgAuth.signOut(); else showPoster();
+  });
 
   /* ---- Sidebar show/hide ---- */
   const appEl = document.querySelector('.app');
