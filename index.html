@@ -118,7 +118,6 @@
             <div class="avatar">DK</div>
             <div class="user-text">
               <div class="user-name">Diedrik Kwooitz</div>
-              <div class="user-handle">DIEDRIKKWOOITZ</div>
             </div>
             <svg class="caret" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
@@ -525,7 +524,6 @@
     var initials = (parts.length >= 2 ? (parts[0][0] + parts[1][0]) : fullName.slice(0, 2)).toUpperCase();
     setText('.user-chip .avatar', initials);
     setText('.user-chip .user-name', fullName);
-    setText('.user-chip .user-handle', fullName.replace(/\s+/g, '').toUpperCase());
 
     // Requestor form: email field
     var empEmail = document.getElementById('empEmail');
