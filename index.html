@@ -507,16 +507,46 @@
   function showError(msg) { err.textContent = msg || ''; }
   function hideGate() { gate.classList.add('authed'); }
 
-  // Show the signed-in person's details in the account menu.
+  // Show the signed-in person's details everywhere the old defaults appeared.
   function reflectUser(user) {
     if (!user) return;
     var meta = user.user_metadata || {};
-    var nameNode  = document.querySelector('.account-name');
-    var emailNode = document.querySelector('.account-email');
-    var roleNode  = document.querySelector('.account-role');
-    if (nameNode)  nameNode.textContent  = meta.full_name || user.email;
-    if (emailNode) emailNode.textContent = user.email;
-    if (roleNode)  roleNode.textContent  = 'User';
+    var fullName = (meta.full_name && meta.full_name.trim()) || user.email;
+
+    function setText(sel, text) {
+      var el = document.querySelector(sel);
+      if (el) el.textContent = text;
+    }
+
+    // Account dropdown menu
+    setText('.account-name',  fullName);
+    setText('.account-email', user.email);
+    setText('.account-role',  'User');
+
+    // Top-right user chip: initials, name, handle
+    var parts = fullName.trim().split(/\s+/);
+    var initials = (parts.length >= 2 ? (parts[0][0] + parts[1][0]) : fullName.slice(0, 2)).toUpperCase();
+    setText('.user-chip .avatar', initials);
+    setText('.user-chip .user-name', fullName);
+    setText('.user-chip .user-handle', fullName.replace(/\s+/g, '').toUpperCase());
+
+    // Requestor form: email field
+    var empEmail = document.getElementById('empEmail');
+    if (empEmail) empEmail.value = user.email;
+
+    // Requestor form: employee-name dropdown (add the user as an option, then select it)
+    var empName = document.getElementById('empName');
+    if (empName) {
+      var exists = Array.prototype.some.call(empName.options, function (o) {
+        return o.value === fullName || o.text === fullName;
+      });
+      if (!exists) {
+        var opt = document.createElement('option');
+        opt.value = fullName; opt.text = fullName;
+        empName.insertBefore(opt, empName.firstChild);
+      }
+      empName.value = fullName;
+    }
   }
 
   // The app's Logout buttons (wired in script.js) call this.
