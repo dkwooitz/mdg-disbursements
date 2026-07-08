@@ -677,17 +677,61 @@
   const claims = [];
   let refSeq = 43; // next reference number
 
-  // Persist claim history on the device so duplicate checks and Previous Claims survive reloads.
-  // (Per-browser for now; the backend will make this permanent and shared.)
-  function saveClaims() {
-    try { localStorage.setItem('mdg-claims', JSON.stringify({ refSeq: refSeq, claims: claims })); } catch (e) {}
+  // A stable unique id for each claim, so it maps to exactly one database row.
+  function newId() {
+    return (window.crypto && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : 'id-' + Date.now() + '-' + Math.random().toString(16).slice(2);
   }
-  function loadClaims() {
-    try {
-      const d = JSON.parse(localStorage.getItem('mdg-claims') || '{}');
-      if (Array.isArray(d.claims)) { claims.length = 0; d.claims.forEach(c => claims.push(c)); }
-      if (typeof d.refSeq === 'number') refSeq = d.refSeq;
-    } catch (e) {}
+
+  // Claims live in the Supabase "disbursements" table. Row Level Security means a
+  // person's queries only ever touch their own rows — the isolation is enforced by
+  // the database, not by this code.
+  async function saveClaims() {
+    const sb   = window.mdgAuth && window.mdgAuth.client;
+    const user = window.mdgAuth && window.mdgAuth.user;
+    if (!sb || !user) return;                       // not signed in yet
+    const rows = claims.map(c => ({
+      id: c.id,
+      owner_id: user.id,                            // stamps the claim with its owner
+      ref: c.ref,
+      status: c.status,
+      amount: (typeof c.grandTotal === 'number') ? c.grandTotal : null,
+      data: c                                       // the whole claim, stored as JSON
+    }));
+    if (!rows.length) return;
+    const { error } = await sb.from('disbursements').upsert(rows, { onConflict: 'id' });
+    if (error) console.error('Could not save claims:', error.message);
+  }
+
+  async function loadClaims() {
+    const sb = window.mdgAuth && window.mdgAuth.client;
+    if (!sb) return;
+    const { data, error } = await sb
+      .from('disbursements')
+      .select('data, created_at')
+      .order('created_at', { ascending: false });   // newest first
+    if (error) { console.error('Could not load claims:', error.message); return; }
+    claims.length = 0;
+    (data || []).forEach(row => { if (row && row.data) claims.push(row.data); });
+    // Continue reference numbering from this user's highest existing claim.
+    let maxSeq = 42;
+    claims.forEach(c => {
+      const m = /(\d+)\s*$/.exec(c.ref || '');
+      if (m) { const n = parseInt(m[1], 10); if (n > maxSeq) maxSeq = n; }
+    });
+    refSeq = maxSeq + 1;
+    // The old per-device history is no longer used; clear it so it can't cause confusion.
+    try { localStorage.removeItem('mdg-claims'); } catch (e) {}
+    recomputeKmFlags();
+    renderPrev();
+  }
+
+  async function deleteClaimRow(id) {
+    const sb = window.mdgAuth && window.mdgAuth.client;
+    if (!sb || !id) return;
+    const { error } = await sb.from('disbursements').delete().eq('id', id);
+    if (error) console.error('Could not delete claim:', error.message);
   }
 
   function fmtDate(d)     { return new Date(d).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }); }
@@ -837,11 +881,13 @@
   function deleteClaim(ref) {
     showConfirm('Are you sure that you want to delete this submitted disbursement? Once deleted, it cannot be retrieved.', () => {
       const i = claims.findIndex(x => x.ref === ref);
-      if (i >= 0) claims.splice(i, 1);
+      let removedId = null;
+      if (i >= 0) { removedId = claims[i].id; claims.splice(i, 1); }
       if (editingRef === ref) { endEdit(); resetForm(); }
       recomputeKmFlags();
       renderPrev();
       saveClaims();
+      if (removedId) deleteClaimRow(removedId);
       showToast('Disbursement ' + ref + ' deleted.', 4000);
     });
   }
@@ -877,6 +923,7 @@
     const proofFile = bankProofInput.files[0];
 
     return {
+      id: newId(),
       ref: newRef(),
       submitted: new Date(),
       status: 'Pending HOD',
@@ -1253,14 +1300,15 @@
   if (kmRateInput) kmRateInput.value = KM_RATE;
   wireAdmin();
 
-  // load saved claim history (survives reloads on this device)
-  loadClaims();
-  recomputeKmFlags();
-  saveClaims();
+  // Claims now live in the database and belong to whoever is signed in. script.js
+  // runs before sign-in resolves, so we expose a hook the auth code calls once the
+  // user is authenticated (see enterApp in index.html).
+  window.mdgApp = window.mdgApp || {};
+  window.mdgApp.onAuthed = function () { loadClaims(); };
 
   recalc();
 
-  // render the Previous Claims table (from saved history)
+  // Empty Previous Claims table until this user's claims arrive from the database.
   renderPrev();
 
   // fetch today's currency rates
