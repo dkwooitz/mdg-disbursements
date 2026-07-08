@@ -1,0 +1,13 @@
+{
+  // Must match the Worker's name in the Cloudflare dashboard exactly.
+  "name": "mdg-disbursements-app",
+
+  "compatibility_date": "2026-07-08",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Serve the site's files (index.html, styles.css, script.js) as static assets.
+  // "." means "the root of the repo" — the folder these files live in.
+  "assets": { "directory": "." },
+
+  "observability": { "enabled": true }
+}
