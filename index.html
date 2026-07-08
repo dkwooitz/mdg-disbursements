@@ -33,6 +33,8 @@
   .auth-btn{width:100%;box-sizing:border-box;border-radius:8px;padding:11px;font-size:14px;font-weight:600;cursor:pointer;border:1px solid transparent;margin-top:8px;}
   .auth-btn-primary{background:var(--accent);color:#fff;}
   .auth-btn-ghost{background:transparent;color:var(--text);border-color:var(--border);}
+  /* Name/email are fixed to the signed-in user and can't be edited. */
+  .fixed-field{cursor:not-allowed;opacity:.9;}
 </style>
 </head>
 <body>
@@ -160,18 +162,13 @@
         <div class="grid-2">
           <div class="field">
             <label>Employee name<span class="req">*</span></label>
-            <select id="empName">
-              <option value="">Select an employee…</option>
-              <option selected>Diedrik Kwooitz</option>
-              <option>Shané van Wyk</option>
-              <option>Thabo Molefe</option>
-              <option>Anika Pretorius</option>
-              <option>Sipho Ndlovu</option>
-            </select>
+            <input type="text" id="empName" class="fixed-field" readonly
+                   title="Taken from your sign-in — you can only file your own claims." />
           </div>
           <div class="field">
             <label>Email<span class="req">*</span></label>
-            <input type="email" id="empEmail" value="DKwooitz@masterdrilling.com" />
+            <input type="email" id="empEmail" class="fixed-field" readonly
+                   title="Taken from your sign-in — you can only file your own claims." />
           </div>
           <div class="field">
             <label>Site<span class="req">*</span></label>
@@ -534,19 +531,9 @@
     var empEmail = document.getElementById('empEmail');
     if (empEmail) empEmail.value = user.email;
 
-    // Requestor form: employee-name dropdown (add the user as an option, then select it)
+    // Requestor form: name is fixed to the signed-in user (read-only field).
     var empName = document.getElementById('empName');
-    if (empName) {
-      var exists = Array.prototype.some.call(empName.options, function (o) {
-        return o.value === fullName || o.text === fullName;
-      });
-      if (!exists) {
-        var opt = document.createElement('option');
-        opt.value = fullName; opt.text = fullName;
-        empName.insertBefore(opt, empName.firstChild);
-      }
-      empName.value = fullName;
-    }
+    if (empName) empName.value = fullName;
   }
 
   // Shared with script.js: the Supabase client, the current user, and sign-out.
