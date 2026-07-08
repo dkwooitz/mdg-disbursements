@@ -549,15 +549,27 @@
     }
   }
 
-  // The app's Logout buttons (wired in script.js) call this.
+  // Shared with script.js: the Supabase client, the current user, and sign-out.
   window.mdgAuth = {
+    client: sb,
+    user: null,
     signOut: function () { sb.auth.signOut().then(function () { location.reload(); }); }
   };
+
+  // Reveal the app and tell script.js to load THIS user's claims from the database.
+  function enterApp(user) {
+    window.mdgAuth.user = user;
+    reflectUser(user);
+    hideGate();
+    if (window.mdgApp && typeof window.mdgApp.onAuthed === 'function') {
+      window.mdgApp.onAuthed();
+    }
+  }
 
   // On load: if already signed in, reveal the app; otherwise keep the login screen.
   sb.auth.getSession().then(function (res) {
     var session = res.data.session;
-    if (session) { reflectUser(session.user); hideGate(); }
+    if (session) { enterApp(session.user); }
   });
 
   document.getElementById('authSignIn').addEventListener('click', function () {
@@ -567,8 +579,7 @@
       password: pass.value || ''
     }).then(function (res) {
       if (res.error) { showError(res.error.message); return; }
-      reflectUser(res.data.user);
-      hideGate();
+      enterApp(res.data.user);
     });
   });
 
@@ -580,7 +591,7 @@
       options: { data: { full_name: (name.value || '').trim() } }
     }).then(function (res) {
       if (res.error) { showError(res.error.message); return; }
-      if (res.data.session) { reflectUser(res.data.user); hideGate(); }   // email confirmation off
+      if (res.data.session) { enterApp(res.data.user); }   // email confirmation off
       else { sub.textContent = 'Account created — now press Sign in.'; }   // email confirmation on
     });
   });
