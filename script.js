@@ -615,7 +615,7 @@
     el.addEventListener('input', () => el.classList.remove('field-error'))
   );
   const submitMsg = document.getElementById('submitMsg');
-  document.getElementById('submitBtn').addEventListener('click', () => {
+  document.getElementById('submitBtn').addEventListener('click', async () => {
     let missing = 0;
     document.querySelectorAll('[data-required]').forEach(el => {
       const ok = el.value && el.value.trim() !== '';
@@ -643,6 +643,7 @@
         if (!(bankProofInput.files && bankProofInput.files.length) && editingProofName) c.banking.proofName = editingProofName;
         c.km = data.km; c.other = data.other;
         c.kmTotal = data.kmTotal; c.otherTotal = data.otherTotal; c.grandTotal = data.grandTotal;
+        await withSubmitBusy(function () { return uploadClaimProofs(c); });
         recomputeKmFlags();
         renderPrev(c.ref);
         submitMsg.textContent = 'Claim ' + c.ref + ' updated. Its progress was kept.';
@@ -662,6 +663,7 @@
         return;
       }
       data.kmFlagged = kmMatchesPrevious(data.km, null);
+      await withSubmitBusy(function () { return uploadClaimProofs(data); });
       claims.unshift(data);
       renderPrev(data.ref);
       saveClaims();
@@ -734,6 +736,52 @@
     if (error) console.error('Could not delete claim:', error.message);
   }
 
+  // Upload any newly-attached proof images to the private "claim-proofs" bucket and
+  // record each file's path on the claim. Rows with no new file keep their existing path.
+  async function uploadClaimProofs(claim) {
+    const sb   = window.mdgAuth && window.mdgAuth.client;
+    const user = window.mdgAuth && window.mdgAuth.user;
+    if (!sb || !user || !claim) return;
+    const base = user.id + '/' + claim.id + '/';
+    async function up(file, slot) {
+      if (!file) return null;                                   // nothing new attached
+      const safe = (file.name || 'file').replace(/[^\w.\-]+/g, '_');
+      const path = base + slot + '-' + safe;
+      const { error } = await sb.storage.from('claim-proofs')
+        .upload(path, file, { upsert: true, contentType: file.type || undefined });
+      if (error) { console.error('Proof upload failed:', error.message); return null; }
+      return path;
+    }
+    if (Array.isArray(claim.km)) {
+      for (let i = 0; i < claim.km.length; i++) {
+        const p = await up(claim.km[i]._file, 'km-' + i);
+        if (p) claim.km[i].proofPath = p;
+        delete claim.km[i]._file;                               // never store the File itself
+      }
+    }
+    if (Array.isArray(claim.other)) {
+      for (let i = 0; i < claim.other.length; i++) {
+        const p = await up(claim.other[i]._file, 'other-' + i);
+        if (p) claim.other[i].proofPath = p;
+        delete claim.other[i]._file;
+      }
+    }
+    if (claim.banking) {
+      const p = await up(claim.banking._file, 'bank');
+      if (p) claim.banking.proofPath = p;
+      delete claim.banking._file;
+    }
+  }
+
+  // Show a busy state on the submit button while proofs upload.
+  async function withSubmitBusy(fn) {
+    const btn = document.getElementById('submitBtn');
+    const prev = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = 'Uploading…'; }
+    try { await fn(); }
+    finally { if (btn) { btn.disabled = false; btn.textContent = prev; } }
+  }
+
   function fmtDate(d)     { return new Date(d).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }); }
   function fmtDateTime(d) { return new Date(d).toLocaleString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
   function newRef() { return 'DSB-' + new Date().getFullYear() + '-' + String(refSeq++).padStart(4, '0'); }
@@ -799,10 +847,20 @@
   // ---- Recall: reopen a claim into New Claim for editing (progress is preserved) ----
   let editingRef = null;
   let editingProofName = '';
+  let editingProofPath = '';
   const editBanner = document.getElementById('editBanner');
   const submitBtnEl = document.getElementById('submitBtn');
 
   function setVal(id, v) { const el = document.getElementById(id); if (el) el.value = v || ''; }
+
+  // Show a "proof already on file" marker on a recalled row's upload button.
+  function markRowProofOnFile(tr) {
+    const b = tr.querySelector('.odo-btn');
+    if (b) {
+      b.classList.add('has-photo');
+      b.innerHTML = '<span class="odo-ok" title="Proof on file">&#10003;</span>';
+    }
+  }
 
   function fillKmRow(tr, r) {
     tr.querySelector('input[type=date]').value = r.date || '';
@@ -810,6 +868,8 @@
     if (texts[0]) texts[0].value = r.from || '';
     if (texts[1]) texts[1].value = r.to || '';
     tr.querySelector('.km-input').value = r.km || '';
+    tr.dataset.proofPath = r.proofPath || '';
+    if (r.proofPath) markRowProofOnFile(tr);
   }
   function fillOtherRow(tr, r) {
     tr.querySelector('input[type=date]').value = r.date || '';
@@ -818,6 +878,8 @@
     tr.querySelector('.amt-input').value = (r.amount != null ? r.amount : '');
     if (r.hash) tr.dataset.fileHash = r.hash;
     if (r.sig) tr.dataset.sig = r.sig;
+    tr.dataset.proofPath = r.proofPath || '';
+    if (r.proofPath) markRowProofOnFile(tr);
   }
 
   function populateForm(c) {
@@ -848,9 +910,10 @@
     recalc();
   }
 
-  function startEdit(ref, proofName) {
+  function startEdit(ref, proofName, proofPath) {
     editingRef = ref;
     editingProofName = proofName || '';
+    editingProofPath = proofPath || '';
     document.getElementById('editRef').textContent = ref;
     if (editBanner) editBanner.classList.remove('hidden');
     if (submitBtnEl) submitBtnEl.textContent = 'Update claim';
@@ -858,6 +921,7 @@
   function endEdit() {
     editingRef = null;
     editingProofName = '';
+    editingProofPath = '';
     if (editBanner) editBanner.classList.add('hidden');
     if (submitBtnEl) submitBtnEl.textContent = 'Submit to HOD';
   }
@@ -872,7 +936,7 @@
     const c = claims.find(x => x.ref === ref);
     if (!c) return;
     populateForm(c);
-    startEdit(ref, c.banking.proofName);
+    startEdit(ref, c.banking.proofName, c.banking.proofPath);
     if (submitMsg) { submitMsg.textContent = ''; submitMsg.className = 'submit-msg'; }
     showView('new');
     showToast('Disbursement ' + ref + ' reopened for editing. Its progress is unchanged.', 5000);
@@ -900,9 +964,11 @@
       const date = tr.querySelector('input[type=date]').value;
       const texts = tr.querySelectorAll('input[type=text]');
       const dist = parseFloat(tr.querySelector('.km-input').value) || 0;
-      const hasPhoto = !!tr.querySelector('.odo-thumb');
+      const kmFile = (tr.querySelector('.odo-input') && tr.querySelector('.odo-input').files[0]) || null;
+      const kmPath = tr.dataset.proofPath || '';
+      const hasPhoto = !!(kmFile || kmPath || tr.querySelector('.odo-thumb'));
       if (dist > 0 || date || (texts[0] && texts[0].value)) {
-        km.push({ date, from: texts[0] ? texts[0].value : '', to: texts[1] ? texts[1].value : '', km: dist, amount: dist * KM_RATE, hasPhoto });
+        km.push({ date, from: texts[0] ? texts[0].value : '', to: texts[1] ? texts[1].value : '', km: dist, amount: dist * KM_RATE, hasPhoto, proofPath: kmPath, _file: kmFile });
       }
     });
 
@@ -912,9 +978,11 @@
       const desc = tr.querySelector('input[type=text]').value;
       const cur = tr.querySelector('.cur-select').value;
       const amt = parseFloat(tr.querySelector('.amt-input').value) || 0;
-      const hasProof = !!tr.querySelector('.odo-thumb');
+      const otherFile = (tr.querySelector('.odo-input') && tr.querySelector('.odo-input').files[0]) || null;
+      const otherPath = tr.dataset.proofPath || '';
+      const hasProof = !!(otherFile || otherPath || tr.querySelector('.odo-thumb'));
       if (amt > 0 || date || desc) {
-        other.push({ date, desc, currency: cur, amount: amt, rate: RATES[cur] || 1, zar: amt * (RATES[cur] || 1), hasProof, hash: tr.dataset.fileHash || '', sig: tr.dataset.sig || '' });
+        other.push({ date, desc, currency: cur, amount: amt, rate: RATES[cur] || 1, zar: amt * (RATES[cur] || 1), hasProof, hash: tr.dataset.fileHash || '', sig: tr.dataset.sig || '', proofPath: otherPath, _file: otherFile });
       }
     });
 
@@ -934,7 +1002,9 @@
       },
       banking: {
         holder: val('bankHolder'), bank: val('bankName'), acc: val('bankAcc'),
-        proofName: proofFile ? proofFile.name : ''
+        proofName: proofFile ? proofFile.name : (editingProofName || ''),
+        proofPath: editingProofPath || '',
+        _file: proofFile || null
       },
       km, other, kmTotal, otherTotal, grandTotal: kmTotal + otherTotal
     };
