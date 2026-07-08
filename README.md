@@ -10,7 +10,7 @@ The entire application is a **single, self-contained HTML file**
 (`mdg-disbursements.html`). There is no build step and no server required to run the
 front end — it opens in any modern browser.
 
----
+----
 
 ## Contents
 
@@ -27,7 +27,7 @@ front end — it opens in any modern browser.
 - [Roadmap](#roadmap)
 - [Technical notes](#technical-notes)
 
----
+----
 
 ## What it does
 
@@ -38,7 +38,7 @@ tracked through a four-stage progress bar, and can be viewed, edited, downloaded
 PDF, or deleted. Foreign-currency claims are converted to South African Rand (ZAR)
 automatically for reporting and payment.
 
----
+----
 
 ## Feature overview
 
@@ -105,7 +105,7 @@ block. The submission date is printed prominently.
 - Theme picker (see [Themes](#themes))
 - Back to Hub / Logout actions
 
----
+----
 
 ## How to run it
 
@@ -117,7 +117,7 @@ No installation required.
 An internet connection is needed for the AI features, live exchange rates, and the PDF
 library.
 
----
+----
 
 ## Hosting (beta)
 
@@ -135,7 +135,7 @@ fit:
 That proxy must be configured to allow requests from the hosting domain (CORS), otherwise
 the receipt and bank-letter readers will be blocked by the browser.
 
----
+----
 
 ## Configuration
 
@@ -154,7 +154,7 @@ A few values live in the code near the top of the main `<script>`:
 | AI proxy key | `AI_PROXY_ANON` | Public Supabase **anon** key (safe for browser use) |
 | Config version | `CONFIG_VERSION` | Bump when built-in defaults change, to refresh saved copies |
 
----
+----
 
 ## How the AI works
 
@@ -170,7 +170,7 @@ result. This keeps any real secret out of the downloadable file.
 - If a call fails, the app degrades gracefully — receipts fall back to manual entry, and
   fields such as Bank remain safe dropdown choices.
 
----
+----
 
 ## Duplicate detection
 
@@ -196,7 +196,7 @@ result. This keeps any real secret out of the downloadable file.
 - Flags are recalculated on load, edit, and delete, so they never go stale (e.g. deleting
   the original clears the flag on the remaining claim).
 
----
+----
 
 ## Data & persistence
 
@@ -207,7 +207,7 @@ browser's **local storage**, so they survive page reloads.
 > a different computer — do **not** share data yet. Clearing browser data erases it. A
 > shared, permanent, multi-user store requires the backend (see Roadmap).
 
----
+----
 
 ## Themes
 
@@ -222,7 +222,7 @@ choice remembered on the device:
 The Master Drilling logo keeps its blue and grey in every theme, and the header icons
 (vehicle, cash, raisebore) re-tint to match the active theme.
 
----
+----
 
 ## Current limitations
 
@@ -238,7 +238,7 @@ The Master Drilling logo keeps its blue and grey in every theme, and the header 
 - **Approval and payment are visual only** — submitting sets a claim to *Pending HOD*, but
   nothing is routed to a real approver or exported to finance systems yet.
 
----
+----
 
 ## Roadmap
 
@@ -255,7 +255,7 @@ Planned work that turns this prototype into a production system:
 5. **Official OANDA rates** — swap the free FX feed for Master Drilling's OANDA Exchange
    Rates API.
 
----
+----
 
 ## Technical notes
 
@@ -269,6 +269,6 @@ Planned work that turns this prototype into a production system:
 - **Storage keys:** `mdg-theme`, `mdg-config`, `mdg-claims`.
 - **PDF layout:** modelled on *FRM-MDS-FIN-0002-E, Rev. 00*.
 
----
+----
 
 *Internal tool for Master Drilling — Finance department.*
