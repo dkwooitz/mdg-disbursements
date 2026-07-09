@@ -1502,6 +1502,77 @@
   if (kmRateInput) kmRateInput.value = KM_RATE;
   wireAdmin();
 
+  /* ---- Policy assistant: answers questions using the Disbursement Policy ---- */
+  const POLICY_FALLBACK_HTML =
+    'Unfortunately your query is not supported by the disbursement policy. If you require further assistance, please contact:<br><br>' +
+    '&bull; Jean Du Toit (CHRO) <a href="mailto:JDuToit@masterdrilling.com">JDuToit@masterdrilling.com</a><br>' +
+    '&bull; Anneke Brink (HR Business Partner) <a href="mailto:AnnekeK@masterdrilling.com">AnnekeK@masterdrilling.com</a><br>' +
+    '&bull; Angelina Lira (HR Business Partner) <a href="mailto:AngelinaL@masterdrilling.com">AngelinaL@masterdrilling.com</a>';
+
+  function policyChatAdd(role, text, isHtml) {
+    const box = document.getElementById('policyChat');
+    if (!box) return null;
+    const b = document.createElement('div');
+    b.className = 'chat-msg ' + (role === 'q' ? 'chat-q' : 'chat-a');
+    if (isHtml) b.innerHTML = text; else b.textContent = text;   // AI/user text is set as textContent (safe)
+    box.appendChild(b);
+    box.scrollTop = box.scrollHeight;
+    return b;
+  }
+
+  async function askPolicy() {
+    const input = document.getElementById('policyQuestion');
+    const btn = document.getElementById('policyAskBtn');
+    const policyEl = document.getElementById('policyText');
+    if (!input || !policyEl) return;
+    const question = (input.value || '').trim();
+    if (!question) return;
+
+    policyChatAdd('q', question);
+    input.value = '';
+    if (btn) btn.disabled = true;
+    const thinking = policyChatAdd('a', 'Thinking…');
+
+    // The policy shown on the page IS the assistant's only source of truth.
+    const policyText = policyEl.innerText;
+    const prompt =
+      "You are an assistant that answers Master Drilling Group employees' questions about the company Disbursement Policy. " +
+      'Use ONLY the policy text provided below to answer. Be concise, clear, and helpful, and do not invent rules that are not in the policy. ' +
+      'If the question cannot be answered from the policy text, reply with exactly this token and nothing else: NOT_IN_POLICY\n\n' +
+      '--- POLICY START ---\n' + policyText + '\n--- POLICY END ---\n\n' +
+      'Question: ' + question;
+
+    try {
+      const resp = await fetch(AI_PROXY_URL, {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + AI_PROXY_ANON, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt })
+      });
+      if (!resp.ok) throw new Error('proxy ' + resp.status);
+      const data = await resp.json();
+      const raw = (data && data.result ? String(data.result) : '').trim();
+      if (thinking) thinking.remove();
+      if (!raw || /NOT_IN_POLICY/i.test(raw)) {
+        policyChatAdd('a', POLICY_FALLBACK_HTML, true);
+      } else {
+        policyChatAdd('a', raw);
+      }
+    } catch (e) {
+      console.error('Policy assistant error:', e);
+      if (thinking) thinking.remove();
+      policyChatAdd('a', 'Sorry, something went wrong reaching the assistant. Please try again.');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  (function wirePolicyAssistant() {
+    const btn = document.getElementById('policyAskBtn');
+    const input = document.getElementById('policyQuestion');
+    if (btn) btn.addEventListener('click', askPolicy);
+    if (input) input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); askPolicy(); } });
+  })();
+
   // Claims now live in the database and belong to whoever is signed in. script.js
   // runs before sign-in resolves, so we expose a hook the auth code calls once the
   // user is authenticated (see enterApp in index.html).
