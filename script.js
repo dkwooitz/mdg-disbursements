@@ -1032,6 +1032,67 @@
   let modalClaim = null;
 
   function row2(a, b) { return '<tr><th>' + a + '</th><td>' + (b || '—') + '</td></tr>'; }
+  // ---- Proof documents: download / print stored images via short-lived signed URLs ----
+  async function getSignedUrl(path, opts) {
+    const sb = window.mdgAuth && window.mdgAuth.client;
+    if (!sb || !path) return null;
+    const { data, error } = await sb.storage.from('claim-proofs').createSignedUrl(path, 300, opts || {});
+    if (error) { console.error('Could not open proof:', error.message); return null; }
+    return data ? data.signedUrl : null;
+  }
+
+  async function downloadProof(path) {
+    const name = (path || '').split('/').pop() || 'proof';
+    const url = await getSignedUrl(path, { download: name });   // forces a download with the original filename
+    if (!url) { showToast('Could not open that file. Please try again.', 4000); return; }
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  async function printProof(path) {
+    const url = await getSignedUrl(path);
+    if (!url) { showToast('Could not open that file. Please try again.', 4000); return; }
+    const w = window.open('', '_blank');
+    if (!w) { showToast('Please allow pop-ups so the proof can open for printing.', 5000); return; }
+    if (/\.pdf(\?|$)/i.test(path)) {
+      w.location = url;                          // the browser's PDF viewer handles printing
+    } else {
+      w.document.write('<html><head><title>Print proof</title>' +
+        '<style>html,body{margin:0;padding:0}img{display:block;max-width:100%;margin:0 auto}</style></head>' +
+        '<body><img src="' + url + '" onload="setTimeout(function(){window.focus();window.print();},150)"></body></html>');
+      w.document.close();
+    }
+  }
+
+  // The "Proof documents" section shown in the claim detail.
+  function buildProofs(c) {
+    const items = [];
+    if (c.banking && c.banking.proofPath) {
+      items.push({ path: c.banking.proofPath, label: 'Bank confirmation letter' });
+    }
+    (c.km || []).forEach((r, i) => {
+      if (r.proofPath) {
+        const route = (r.from || '') + (r.to ? ' \u2192 ' + r.to : '');
+        items.push({ path: r.proofPath, label: 'Odometer photo' + (route ? ' (' + route + ')' : ' (row ' + (i + 1) + ')') });
+      }
+    });
+    (c.other || []).forEach((r, i) => {
+      if (r.proofPath) items.push({ path: r.proofPath, label: 'Receipt' + (r.desc ? ' (' + r.desc + ')' : ' (row ' + (i + 1) + ')') });
+    });
+    if (!items.length) return '';
+    let h = '<h4>Proof documents</h4><table class="detail-kv">';
+    items.forEach(it => {
+      h += '<tr><td>' + escapeHtml(it.label) + '</td>' +
+        '<td style="text-align:right; white-space:nowrap;">' +
+        '<button class="mini-btn" data-proof-action="download" data-proof-path="' + it.path + '">Download</button> ' +
+        '<button class="mini-btn" data-proof-action="print" data-proof-path="' + it.path + '">Print</button>' +
+        '</td></tr>';
+    });
+    h += '</table>';
+    return h;
+  }
+
   function buildDetail(c) {
     let h = '<table class="detail-kv">' +
       row2('Employee', c.employee.name) +
@@ -1059,7 +1120,77 @@
     if (c.kmFlagged) {
       h += '<div class="km-flag" style="margin-top:18px;">The kilometres and/or route on this claim reflect a previous disbursement. Please ensure the accuracy and integrity of this disbursement.</div>';
     }
+    h += '<h4>Proof documents</h4><div id="proofDocs" class="proof-list">Loading…</div>';
     return h;
+  }
+
+  // ---- Proof documents: view / download / print (private, via short-lived signed links) ----
+  function proofIsImage(path) {
+    return /\.(jpe?g|png|gif|webp|bmp|heic)$/i.test(path || '');
+  }
+  async function proofSignedUrl(path) {
+    const sb = window.mdgAuth && window.mdgAuth.client;
+    if (!sb || !path) return null;
+    const { data, error } = await sb.storage.from('claim-proofs').createSignedUrl(path, 300);
+    if (error) { console.error('Could not create link:', error.message); return null; }
+    return data ? data.signedUrl : null;
+  }
+  function collectProofs(c) {
+    const list = [];
+    (c.km || []).forEach((r, i) => { if (r.proofPath) list.push({ label: 'Odometer photo — travelling row ' + (i + 1), path: r.proofPath }); });
+    (c.other || []).forEach((r, i) => { if (r.proofPath) list.push({ label: 'Receipt — other claim row ' + (i + 1), path: r.proofPath }); });
+    if (c.banking && c.banking.proofPath) list.push({ label: 'Bank confirmation letter', path: c.banking.proofPath, filename: c.banking.proofName });
+    return list;
+  }
+  async function downloadProof(path, filename) {
+    const url = await proofSignedUrl(path);
+    if (!url) { showToast('Could not open that file.', 4000); return; }
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const obj = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = obj; a.download = filename || path.split('/').pop();
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(obj), 5000);
+    } catch (e) { console.error('Download failed:', e); showToast('Could not download that file.', 4000); }
+  }
+  async function printProof(path) {
+    const url = await proofSignedUrl(path);
+    if (!url) { showToast('Could not open that file.', 4000); return; }
+    const w = window.open('', '_blank');
+    if (!w) { showToast('Allow pop-ups for this site to print the proof.', 5000); return; }
+    if (proofIsImage(path)) {
+      w.document.write('<html><head><title>Proof</title><style>@page{margin:12mm}body{margin:0}img{max-width:100%;display:block;margin:0 auto}</style></head><body><img src="' + url + '" onload="setTimeout(function(){window.focus();window.print();},250)"></body></html>');
+      w.document.close();
+    } else {
+      w.location.href = url;   // PDFs open in the browser's own viewer, which has a print button
+    }
+  }
+  async function renderProofDocs(c) {
+    const wrap = document.getElementById('proofDocs');
+    if (!wrap) return;
+    const proofs = collectProofs(c);
+    if (!proofs.length) {
+      wrap.innerHTML = '<div style="color:var(--text-dim);font-size:13px;">No proof documents were attached to this claim.</div>';
+      return;
+    }
+    wrap.innerHTML = '';
+    proofs.forEach(p => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--border);';
+      const name = document.createElement('span');
+      name.textContent = p.label;
+      name.style.cssText = 'flex:1;font-size:13px;';
+      const dl = document.createElement('button');
+      dl.className = 'mini-btn'; dl.type = 'button'; dl.textContent = 'Download';
+      dl.addEventListener('click', () => downloadProof(p.path, p.filename));
+      const pr = document.createElement('button');
+      pr.className = 'mini-btn'; pr.type = 'button'; pr.textContent = 'Print';
+      pr.addEventListener('click', () => printProof(p.path));
+      row.appendChild(name); row.appendChild(dl); row.appendChild(pr);
+      wrap.appendChild(row);
+    });
   }
 
   function openClaim(c) {
@@ -1069,6 +1200,7 @@
     document.getElementById('mSub').textContent = 'Submitted ' + fmtDateTime(c.submitted) + '  ·  ' + c.status;
     document.getElementById('mBody').innerHTML = buildDetail(c);
     modal.classList.remove('hidden');
+    renderProofDocs(c);
   }
   function closeModal() { modal.classList.add('hidden'); }
   document.getElementById('mClose').addEventListener('click', closeModal);
