@@ -49,6 +49,23 @@
   .policy-ask input:focus{outline:none;border-color:var(--accent);}
   .btn-accent{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:11px 18px;font-size:14px;font-weight:600;cursor:pointer;}
   .btn-accent:disabled{opacity:.6;cursor:default;}
+  /* Dashboard */
+  .dash-filters{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;}
+  .dash-filters > div{display:flex;flex-direction:column;gap:4px;}
+  .dash-filters label{font-size:12px;color:var(--text-dim);}
+  .dash-filters select,.dash-filters input{background:var(--field);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-size:14px;min-width:150px;}
+  .dash-summary{display:flex;gap:40px;flex-wrap:wrap;}
+  .dash-stat{display:flex;flex-direction:column;gap:4px;}
+  .dash-stat-label{font-size:12px;color:var(--text-dim);}
+  .dash-stat-value{font-size:26px;font-weight:700;color:var(--text);}
+  .dash-table{width:100%;border-collapse:collapse;font-size:14px;}
+  .dash-table th{text-align:left;color:var(--text-dim);font-weight:600;font-size:12px;padding:6px 8px;border-bottom:1px solid var(--border);}
+  .dash-table td{padding:8px;border-bottom:1px solid var(--border);color:var(--text);}
+  .dash-claim{padding:10px 0;border-bottom:1px solid var(--border);}
+  .dash-claim-head{display:flex;gap:14px;align-items:baseline;flex-wrap:wrap;font-size:14px;color:var(--text);}
+  .dash-claim-head span{color:var(--text-dim);font-size:13px;}
+  .dash-claim-total{margin-left:auto;color:var(--text)!important;font-weight:600;}
+  .dash-claim-items{font-size:13px;color:var(--text-dim);margin-top:4px;}
 </style>
 </head>
 <body>
@@ -86,6 +103,10 @@
     <div class="nav-item" data-view="previous">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 8v4l3 2"/></svg>
       Previous Claims
+    </div>
+    <div class="nav-item nav-admin hidden" data-view="dashboard">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/></svg>
+      Dashboard
     </div>
     <div class="nav-item" data-view="admin">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4"/><path d="M10.3 12.7 L20 3"/><path d="M17 6l2.5 2.5"/><path d="M14.5 8.5l2.5 2.5"/></svg>
@@ -446,6 +467,45 @@
           </div>
         </section>
       </div><!-- /view-manual -->
+
+      <!-- ===== Dashboard (admin only) ===== -->
+      <div class="view hidden" id="view-dashboard">
+        <h1 class="page-title">Dashboard</h1>
+        <p class="page-sub">Company-wide disbursement overview — administrators only.</p>
+
+        <section class="card">
+          <div class="dash-filters">
+            <div><label>Site</label><select id="dSite"><option value="">All sites</option></select></div>
+            <div><label>Machine</label><select id="dMachine"><option value="">All machines</option></select></div>
+            <div><label>Employee</label><select id="dEmployee"><option value="">All employees</option></select></div>
+            <div><label>From</label><input type="date" id="dFrom"></div>
+            <div><label>To</label><input type="date" id="dTo"></div>
+            <button type="button" id="dReset" class="mini-btn">Reset filters</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="dash-summary">
+            <div class="dash-stat"><span class="dash-stat-label">Total disbursements (in view)</span><span class="dash-stat-value" id="dTotal">R 0,00</span></div>
+            <div class="dash-stat"><span class="dash-stat-label">Number of claims</span><span class="dash-stat-value" id="dCount">0</span></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h3>By site</h3>
+          <table class="dash-table" id="dBySite"><tbody></tbody></table>
+          <h3 style="margin-top:22px">By machine</h3>
+          <table class="dash-table" id="dByMachine"><tbody></tbody></table>
+          <h3 style="margin-top:22px">By employee</h3>
+          <table class="dash-table" id="dByEmployee"><tbody></tbody></table>
+        </section>
+
+        <section class="card">
+          <h3>Claims in view</h3>
+          <p class="page-sub" style="margin-top:0">Individual claims matching the filters — scan the line items for anything that doesn't belong.</p>
+          <div id="dDetail"></div>
+        </section>
+      </div><!-- /view-dashboard -->
 
       <!-- ===== Settings ===== -->
       <div class="view hidden" id="view-settings">

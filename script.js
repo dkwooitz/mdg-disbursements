@@ -1576,8 +1576,155 @@
   // Claims now live in the database and belong to whoever is signed in. script.js
   // runs before sign-in resolves, so we expose a hook the auth code calls once the
   // user is authenticated (see enterApp in index.html).
+  // After sign-in, find out whether this user is an admin and, if so, reveal the
+  // admin-only tabs. Note: this only affects what's SHOWN — the real protection is
+  // the database RLS, which blocks non-admins from other people's data regardless.
+  async function checkAdmin() {
+    const sb = window.mdgAuth && window.mdgAuth.client;
+    const user = window.mdgAuth && window.mdgAuth.user;
+    if (!sb || !user) return;
+    const { data, error } = await sb.from('profiles').select('is_admin').eq('id', user.id).single();
+    if (error) { console.error('Admin check failed:', error.message); return; }
+    window.mdgIsAdmin = !!(data && data.is_admin);
+    if (window.mdgIsAdmin) {
+      document.querySelectorAll('.nav-admin').forEach(el => el.classList.remove('hidden'));
+    }
+  }
+
+  /* ---- Dashboard (admin only): company-wide disbursement control ---- */
+  let dashRecords = [];
+
+  function dashEsc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  async function loadDashboard() {
+    const sb = window.mdgAuth && window.mdgAuth.client;
+    if (!sb || !window.mdgIsAdmin) return;   // admins only; RLS enforces this too
+    const { data, error } = await sb.from('disbursements')
+      .select('data, created_at').order('created_at', { ascending: false });
+    if (error) { console.error('Dashboard load failed:', error.message); return; }
+    dashRecords = (data || []).map(row => {
+      const c = row.data || {};
+      const emp = c.employee || {};
+      return {
+        site: emp.site || '—',
+        machine: emp.machine || '—',
+        employee: emp.name || '—',
+        total: (typeof c.grandTotal === 'number') ? c.grandTotal : 0,
+        date: c.submitted || row.created_at,
+        km: c.km || [],
+        other: c.other || [],
+        claim: c
+      };
+    });
+    populateDashFilters();
+    renderDashboard();
+  }
+
+  function dashUnique(arr) { return Array.from(new Set(arr)).filter(Boolean).sort(); }
+  function dashFilters() {
+    const g = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+    return { site: g('dSite'), machine: g('dMachine'), employee: g('dEmployee'), from: g('dFrom'), to: g('dTo') };
+  }
+  function dashInRange(dateStr, from, to) {
+    const d = new Date(dateStr);
+    if (from && d < new Date(from + 'T00:00:00')) return false;
+    if (to && d > new Date(to + 'T23:59:59')) return false;
+    return true;
+  }
+  function dashFiltered() {
+    const f = dashFilters();
+    return dashRecords.filter(r =>
+      (!f.site || r.site === f.site) &&
+      (!f.machine || r.machine === f.machine) &&
+      (!f.employee || r.employee === f.employee) &&
+      dashInRange(r.date, f.from, f.to));
+  }
+  function dashFillSelect(id, options, allLabel, keep) {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    sel.innerHTML = '<option value="">' + allLabel + '</option>' +
+      options.map(o => '<option>' + dashEsc(o) + '</option>').join('');
+    sel.value = (keep && options.indexOf(keep) >= 0) ? keep : '';
+  }
+  // Cascade: machines shown depend on the chosen site; employees on site + machine.
+  function populateDashFilters() {
+    const f = dashFilters();
+    dashFillSelect('dSite', dashUnique(dashRecords.map(r => r.site)), 'All sites', f.site);
+    const siteScope = dashRecords.filter(r => !f.site || r.site === f.site);
+    dashFillSelect('dMachine', dashUnique(siteScope.map(r => r.machine)), 'All machines', f.machine);
+    const machScope = siteScope.filter(r => !f.machine || r.machine === f.machine);
+    dashFillSelect('dEmployee', dashUnique(machScope.map(r => r.employee)), 'All employees', f.employee);
+  }
+
+  function dashBreakdown(tableId, rows, key, label) {
+    const map = {};
+    rows.forEach(r => { const k = r[key] || '—'; (map[k] = map[k] || { count: 0, total: 0 }); map[k].count++; map[k].total += r.total || 0; });
+    const entries = Object.keys(map).map(k => ({ k: k, count: map[k].count, total: map[k].total }))
+      .sort((a, b) => b.total - a.total);   // biggest first — the ones worth questioning
+    const tb = document.querySelector('#' + tableId + ' tbody');
+    if (!tb) return;
+    if (!entries.length) { tb.innerHTML = '<tr><td style="color:var(--text-dim)">No claims in view.</td></tr>'; return; }
+    tb.innerHTML = '<tr><th>' + label + '</th><th style="text-align:right">Claims</th><th style="text-align:right">Total</th></tr>' +
+      entries.map(e => '<tr><td>' + dashEsc(e.k) + '</td><td style="text-align:right">' + e.count + '</td><td style="text-align:right">' + money.format(e.total) + '</td></tr>').join('');
+  }
+
+  function dashDetail(rows) {
+    const box = document.getElementById('dDetail');
+    if (!box) return;
+    if (!rows.length) { box.innerHTML = '<p style="color:var(--text-dim)">No claims match these filters.</p>'; return; }
+    const sorted = rows.slice().sort((a, b) => new Date(b.date) - new Date(a.date));
+    box.innerHTML = sorted.map((r, i) => {
+      const items = [];
+      (r.km || []).forEach(k => items.push('Travel: ' + (k.from || '?') + ' → ' + (k.to || '?') + ' (' + (k.km || 0) + ' km)'));
+      (r.other || []).forEach(o => items.push((o.desc || 'Other') + ' — ' + (o.currency || 'ZAR') + ' ' + (o.amount != null ? (+o.amount).toFixed(2) : '')));
+      return '<div class="dash-claim">' +
+        '<div class="dash-claim-head"><strong>' + dashEsc(r.employee) + '</strong>' +
+        '<span>' + dashEsc(r.site) + ' · ' + dashEsc(r.machine) + '</span>' +
+        '<span>' + fmtDate(r.date) + '</span>' +
+        '<span class="dash-claim-total">' + money.format(r.total) + '</span>' +
+        '<button class="mini-btn" data-dash-idx="' + i + '">View</button></div>' +
+        '<div class="dash-claim-items">' + (items.length ? items.map(dashEsc).join('  ·  ') : 'No line items') + '</div>' +
+        '</div>';
+    }).join('');
+    box.querySelectorAll('[data-dash-idx]').forEach(b => {
+      b.addEventListener('click', () => {
+        const rec = sorted[parseInt(b.dataset.dashIdx, 10)];
+        if (rec && rec.claim) openClaim(rec.claim);   // full detail incl. banking
+      });
+    });
+  }
+
+  function renderDashboard() {
+    const rows = dashFiltered();
+    const total = rows.reduce((s, r) => s + (r.total || 0), 0);
+    const tEl = document.getElementById('dTotal'); if (tEl) tEl.textContent = money.format(total);
+    const cEl = document.getElementById('dCount'); if (cEl) cEl.textContent = String(rows.length);
+    dashBreakdown('dBySite', rows, 'site', 'Site');
+    dashBreakdown('dByMachine', rows, 'machine', 'Machine');
+    dashBreakdown('dByEmployee', rows, 'employee', 'Employee');
+    dashDetail(rows);
+  }
+
+  (function wireDashboard() {
+    ['dSite', 'dMachine', 'dEmployee', 'dFrom', 'dTo'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('change', () => { populateDashFilters(); renderDashboard(); });
+    });
+    const reset = document.getElementById('dReset');
+    if (reset) reset.addEventListener('click', () => {
+      ['dSite', 'dMachine', 'dEmployee', 'dFrom', 'dTo'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      populateDashFilters(); renderDashboard();
+    });
+    // Refresh the data every time the Dashboard tab is opened.
+    const navDash = document.querySelector('.nav-item[data-view="dashboard"]');
+    if (navDash) navDash.addEventListener('click', loadDashboard);
+  })();
+
   window.mdgApp = window.mdgApp || {};
-  window.mdgApp.onAuthed = function () { loadClaims(); };
+  window.mdgApp.onAuthed = function () { loadClaims(); checkAdmin(); };
 
   recalc();
 
