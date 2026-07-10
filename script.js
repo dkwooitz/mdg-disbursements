@@ -364,8 +364,10 @@
     showToast(msg, 6500);
   }
   // Signature of a whole disbursement (employee + all line items + total) to catch re-submissions.
-  // A claim is "late" if any Other-claim slip's purchase date is more than 90 days
-  // before the claim was submitted (policy 5.4: submit within 90 calendar days).
+  // A claim is "late" if it was SUBMITTED more than 90 days after a slip's purchase
+  // date (policy 5.4: 90 calendar days from the transaction date to disburse). Because
+  // the check is anchored to the submission date, a claim that was compliant when it
+  // was submitted stays clean forever, even as the slip keeps ageing.
   function isLateClaim(c) {
     if (!c || !c.submitted || !Array.isArray(c.other)) return false;
     const sub = new Date(c.submitted);
@@ -374,7 +376,7 @@
       if (!o || !o.date) return false;
       const d = new Date(o.date);
       if (isNaN(d)) return false;
-      return (sub - d) / 86400000 > 90;   // 86,400,000 ms in a day
+      return (sub.getTime() - d.getTime()) / 86400000 > 90;   // submitted >90 days after purchase
     });
   }
 
