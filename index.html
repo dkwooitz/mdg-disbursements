@@ -49,6 +49,8 @@
   .policy-ask input:focus{outline:none;border-color:var(--accent);}
   .btn-accent{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:11px 18px;font-size:14px;font-weight:600;cursor:pointer;}
   .btn-accent:disabled{opacity:.6;cursor:default;}
+  .btn-danger{background:#d9483b;color:#fff;border:none;border-radius:8px;padding:9px 16px;font-size:14px;font-weight:600;cursor:pointer;}
+  .btn-danger:hover{background:#c23e32;}
   /* Dashboard */
   .dash-filters{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;}
   .dash-filters > div{display:flex;flex-direction:column;gap:4px;}
@@ -229,6 +231,13 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6z"/><path d="M18 14l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/></svg>
           <span>Upload your bank confirmation letter and it'll fill in the account holder, bank and account number for you. Please check every digit is correct before submitting.</span>
         </div>
+        <div class="field" style="margin-bottom:12px;">
+          <label>Bank details source</label>
+          <select id="bankSource">
+            <option value="main">Main bank details</option>
+            <option value="other">Other bank details</option>
+          </select>
+        </div>
         <div class="grid-2">
           <div class="field">
             <label>Name of account holder<span class="req">*</span></label>
@@ -252,6 +261,10 @@
               <span id="bankProofLabel">Upload bank confirmation letter</span>
             </button>
           </div>
+        </div>
+        <div id="bankActions" style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;">
+          <button type="button" id="bankSaveMain" class="btn-accent" style="display:none;">Save as my main bank details</button>
+          <button type="button" id="bankUpdateMain" class="btn-danger" style="display:none;">Update bank details</button>
         </div>
       </section>
       <section class="card">
@@ -591,6 +604,17 @@
     <div class="modal-foot">
       <button class="btn btn-ghost" id="confirmCancel">Cancel</button>
       <button class="btn btn-delete" id="confirmOk">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- Generic confirmation dialog -->
+<div id="confirmModal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.5);align-items:center;justify-content:center;padding:24px;">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:24px;max-width:420px;width:100%;">
+    <p id="confirmMsg" style="font-size:15px;color:var(--text);margin:0 0 20px;line-height:1.5;"></p>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button type="button" id="confirmCancel" class="mini-btn">Cancel</button>
+      <button type="button" id="confirmContinue" class="btn-danger">Continue</button>
     </div>
   </div>
 </div>

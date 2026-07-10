@@ -638,7 +638,9 @@
       el.classList.toggle('field-error', !ok);
       if (!ok) missing++;
     });
-    const proofOk = (bankProofInput.files && bankProofInput.files.length > 0) || (editingRef && editingProofName);
+    const bankSrcEl = document.getElementById('bankSource');
+    const usingMain = bankSrcEl && bankSrcEl.value === 'main' && mainBanking;
+    const proofOk = usingMain || (bankProofInput.files && bankProofInput.files.length > 0) || (editingRef && editingProofName);
     bankProofBtn.classList.toggle('field-error', !proofOk);
     if (!proofOk) missing++;
 
@@ -956,6 +958,11 @@
     if (!c) return;
     populateForm(c);
     startEdit(ref, c.banking.proofName, c.banking.proofPath);
+    // Show the recalled claim's banking as editable "Other" details.
+    bankEditingMain = false;
+    const bankSrc = document.getElementById('bankSource');
+    if (bankSrc) bankSrc.value = 'other';
+    applyBankSource();
     if (submitMsg) { submitMsg.textContent = ''; submitMsg.className = 'submit-msg'; }
     showView('new');
     showToast('Disbursement ' + ref + ' reopened for editing. Its progress is unchanged.', 5000);
@@ -1019,13 +1026,26 @@
         name: val('empName'), email: val('empEmail'),
         site: val('empSite'), machine: val('empMachine'), carReg: val('carReg')
       },
-      banking: {
-        holder: val('bankHolder'), bank: val('bankName'), acc: val('bankAcc'),
-        proofName: proofFile ? proofFile.name : (editingProofName || ''),
-        proofPath: editingProofPath || '',
-        _file: proofFile || null
-      },
+      banking: collectBanking(proofFile),
       km, other, kmTotal, otherTotal, grandTotal: kmTotal + otherTotal
+    };
+  }
+
+  // Returns the banking to record on a claim, based on the selected source.
+  function collectBanking(proofFile) {
+    const src = document.getElementById('bankSource');
+    if (src && src.value === 'main' && mainBanking) {
+      return {
+        holder: mainBanking.holder || '', bank: mainBanking.bank || '', acc: mainBanking.acc || '',
+        proofName: mainBanking.proofName || '', proofPath: mainBanking.proofPath || '',
+        _file: null, source: 'main'
+      };
+    }
+    return {
+      holder: val('bankHolder'), bank: val('bankName'), acc: val('bankAcc'),
+      proofName: proofFile ? proofFile.name : (editingProofName || ''),
+      proofPath: editingProofPath || '',
+      _file: proofFile || null, source: 'other'
     };
   }
 
@@ -1036,6 +1056,11 @@
     bankProofInput.value = '';
     bankProofBtn.classList.remove('has-file', 'field-error', 'busy');
     bankProofBtn.innerHTML = uploadSvg + '<span class="pf-label">Upload bank confirmation letter</span>';
+    // Return the banking section to its Main view for the next claim.
+    bankEditingMain = false;
+    const bankSrc = document.getElementById('bankSource');
+    if (bankSrc) bankSrc.value = 'main';
+    if (typeof applyBankSource === 'function') applyBankSource();
     recalc();
   }
 
@@ -1598,6 +1623,142 @@
   // Claims now live in the database and belong to whoever is signed in. script.js
   // runs before sign-in resolves, so we expose a hook the auth code calls once the
   // user is authenticated (see enterApp in index.html).
+  /* ---- Main / Other bank details ---- */
+  let mainBanking = null;
+  let bankEditingMain = false;
+
+  function bankFill(b) {
+    const h = document.getElementById('bankHolder'), n = document.getElementById('bankName'), a = document.getElementById('bankAcc');
+    if (h) h.value = b ? (b.holder || '') : '';
+    if (n) n.value = b ? (b.bank || '') : '';
+    if (a) a.value = b ? (b.acc || '') : '';
+  }
+  function bankSetEditable(editable) {
+    const h = document.getElementById('bankHolder'), a = document.getElementById('bankAcc');
+    if (h) h.readOnly = !editable;
+    if (a) a.readOnly = !editable;
+    const n = document.getElementById('bankName'); if (n) n.disabled = !editable;
+    if (bankProofBtn) bankProofBtn.disabled = !editable;
+  }
+  function setBankProofLabel(text) {
+    const el = document.getElementById('bankProofLabel') || (bankProofBtn && bankProofBtn.querySelector('.pf-label'));
+    if (el) el.textContent = text;
+  }
+  function applyBankSource() {
+    const srcEl = document.getElementById('bankSource');
+    if (!srcEl) return;
+    const src = srcEl.value;
+    const saveBtn = document.getElementById('bankSaveMain');
+    const updateBtn = document.getElementById('bankUpdateMain');
+    if (src === 'main' && mainBanking && !bankEditingMain) {
+      // Show the saved main details, read-only.
+      bankFill(mainBanking);
+      bankSetEditable(false);
+      setBankProofLabel(mainBanking.proofName ? ('On file: ' + mainBanking.proofName) : 'Bank letter on file');
+      if (saveBtn) saveBtn.style.display = 'none';
+      if (updateBtn) updateBtn.style.display = 'inline-block';
+    } else {
+      // Editable: first-time Main setup, updating Main, or Other.
+      bankSetEditable(true);
+      if (saveBtn) saveBtn.style.display = 'inline-block';
+      if (updateBtn) updateBtn.style.display = 'none';
+      if (!(bankProofInput.files && bankProofInput.files.length) && !(bankProofBtn && bankProofBtn.classList.contains('has-file'))) {
+        setBankProofLabel('Upload bank confirmation letter');
+      }
+    }
+  }
+  async function loadMainBanking() {
+    const sb = window.mdgAuth && window.mdgAuth.client;
+    const user = window.mdgAuth && window.mdgAuth.user;
+    if (!sb || !user) return;
+    const { data, error } = await sb.from('profiles').select('main_banking').eq('id', user.id).single();
+    if (!error && data) mainBanking = data.main_banking || null;
+    bankEditingMain = false;
+    const srcEl = document.getElementById('bankSource');
+    if (srcEl) srcEl.value = 'main';
+    applyBankSource();
+  }
+  function bankFieldsValid() {
+    return val('bankHolder') && val('bankName') && val('bankAcc') &&
+      (bankProofInput.files && bankProofInput.files.length > 0);
+  }
+  async function saveMainBanking() {
+    const sb = window.mdgAuth && window.mdgAuth.client;
+    const user = window.mdgAuth && window.mdgAuth.user;
+    if (!sb || !user) return;
+    let proofPath = mainBanking ? (mainBanking.proofPath || '') : '';
+    let proofName = mainBanking ? (mainBanking.proofName || '') : '';
+    const f = bankProofInput.files[0];
+    if (f) {
+      const safe = (f.name || 'letter').replace(/[^\w.\-]+/g, '_');
+      const path = user.id + '/main-banking/bank-' + safe;
+      const { error } = await sb.storage.from('claim-proofs').upload(path, f, { upsert: true, contentType: f.type || undefined });
+      if (error) { console.error('Main bank proof upload failed:', error.message); showToast('Could not upload the bank letter.', 4000); return; }
+      proofPath = path; proofName = f.name;
+    }
+    const mb = { holder: val('bankHolder'), bank: val('bankName'), acc: val('bankAcc'), proofPath: proofPath, proofName: proofName };
+    const { error } = await sb.from('profiles').update({ main_banking: mb }).eq('id', user.id);
+    if (error) { console.error('Save main banking failed:', error.message); showToast('Could not save main bank details.', 4000); return; }
+    mainBanking = mb;
+    bankEditingMain = false;
+    if (bankProofInput) bankProofInput.value = '';
+    if (bankProofBtn) bankProofBtn.classList.remove('has-file');
+    showToast('Main bank details saved.', 4000);
+    const srcEl = document.getElementById('bankSource');
+    if (srcEl) srcEl.value = 'main';
+    applyBankSource();
+  }
+
+  // Generic confirmation dialog (Cancel / Continue).
+  function confirmAction(message, onContinue) {
+    const modal = document.getElementById('confirmModal');
+    const msg = document.getElementById('confirmMsg');
+    const ok = document.getElementById('confirmContinue');
+    const cancel = document.getElementById('confirmCancel');
+    if (!modal || !ok || !cancel) { if (window.confirm(message)) onContinue(); return; }
+    msg.textContent = message;
+    modal.style.display = 'flex';
+    const close = () => { modal.style.display = 'none'; ok.onclick = null; cancel.onclick = null; };
+    ok.onclick = () => { close(); onContinue(); };
+    cancel.onclick = close;
+  }
+
+  (function wireBankSource() {
+    const srcEl = document.getElementById('bankSource');
+    if (srcEl) srcEl.addEventListener('change', () => {
+      bankEditingMain = false;
+      bankFill(null);
+      if (bankProofInput) bankProofInput.value = '';
+      if (bankProofBtn) bankProofBtn.classList.remove('has-file');
+      applyBankSource();
+    });
+    const saveBtn = document.getElementById('bankSaveMain');
+    if (saveBtn) saveBtn.addEventListener('click', () => {
+      if (!bankFieldsValid()) { showToast('Complete the bank details and upload a bank letter first.', 4000); return; }
+      const src = srcEl ? srcEl.value : 'other';
+      if (src === 'other') {
+        // Saving an "Other" account as Main — always confirm (per policy).
+        const msg = mainBanking
+          ? 'Are you sure you want to change your main bank details?'
+          : 'Save these as your main bank details?';
+        confirmAction(msg, saveMainBanking);
+      } else {
+        // Main tab: first-time setup, or committing an Update that was already confirmed.
+        saveMainBanking();
+      }
+    });
+    const updateBtn = document.getElementById('bankUpdateMain');
+    if (updateBtn) updateBtn.addEventListener('click', () => {
+      confirmAction('Are you sure you want to change your main bank details?', () => {
+        bankEditingMain = true;
+        bankFill(null);
+        if (bankProofInput) bankProofInput.value = '';
+        if (bankProofBtn) bankProofBtn.classList.remove('has-file');
+        applyBankSource();
+      });
+    });
+  })();
+
   // After sign-in, find out whether this user is an admin and, if so, reveal the
   // admin-only tabs. Note: this only affects what's SHOWN — the real protection is
   // the database RLS, which blocks non-admins from other people's data regardless.
@@ -1746,7 +1907,7 @@
   })();
 
   window.mdgApp = window.mdgApp || {};
-  window.mdgApp.onAuthed = function () { loadClaims(); checkAdmin(); };
+  window.mdgApp.onAuthed = function () { loadClaims(); checkAdmin(); loadMainBanking(); };
 
   recalc();
 
