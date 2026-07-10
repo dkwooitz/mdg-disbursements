@@ -364,6 +364,20 @@
     showToast(msg, 6500);
   }
   // Signature of a whole disbursement (employee + all line items + total) to catch re-submissions.
+  // A claim is "late" if any Other-claim slip's purchase date is more than 90 days
+  // before the claim was submitted (policy 5.4: submit within 90 calendar days).
+  function isLateClaim(c) {
+    if (!c || !c.submitted || !Array.isArray(c.other)) return false;
+    const sub = new Date(c.submitted);
+    if (isNaN(sub)) return false;
+    return c.other.some(o => {
+      if (!o || !o.date) return false;
+      const d = new Date(o.date);
+      if (isNaN(d)) return false;
+      return (sub - d) / 86400000 > 90;   // 86,400,000 ms in a day
+    });
+  }
+
   function claimSig(d) {
     const km = (d.km || []).map(r => [r.date, r.from, r.to, r.km, (+r.amount).toFixed(2)].join(',')).sort().join(';');
     const oth = (d.other || []).map(r => [r.date, (r.desc || '').toLowerCase().trim(), r.currency, (+r.amount).toFixed(2)].join(',')).sort().join(';');
@@ -821,8 +835,11 @@
       const flagBadge = c.kmFlagged
         ? ' <span class="km-flag-badge" title="The kilometres and/or the route reflects a previous disbursement. Please ensure accuracy and integrity of disbursement.">!</span>'
         : '';
+      const lateBadge = isLateClaim(c)
+        ? ' <span title="Disbursement submitted 90 days after initial day of purchase. Falls outside policy terms." style="display:inline-block;background:#f5a623;color:#3a2c00;font-weight:700;border-radius:4px;padding:0 6px;font-size:12px;cursor:help;">&#9888;</span>'
+        : '';
       tr.innerHTML =
-        '<td class="ref">' + c.ref + flagBadge + '</td>' +
+        '<td class="ref">' + c.ref + flagBadge + lateBadge + '</td>' +
         '<td>' + fmtDate(c.submitted) + '</td>' +
         '<td>' + typeLabel(c) + '</td>' +
         '<td style="text-align:right">' + money.format(c.grandTotal) + '</td>' +
@@ -1119,6 +1136,9 @@
       '<tr class="tot"><th>Grand total</th><td>' + money.format(c.grandTotal) + '</td></tr></table>';
     if (c.kmFlagged) {
       h += '<div class="km-flag" style="margin-top:18px;">The kilometres and/or route on this claim reflect a previous disbursement. Please ensure the accuracy and integrity of this disbursement.</div>';
+    }
+    if (isLateClaim(c)) {
+      h += '<div style="margin-top:14px;background:#fff4e0;border:1px solid #f5a623;color:#7a5300;border-radius:8px;padding:10px 12px;font-size:14px;">&#9888; Disbursement submitted 90 days after initial day of purchase. Falls outside policy terms.</div>';
     }
     h += '<h4>Proof documents</h4><div id="proofDocs" class="proof-list">Loading…</div>';
     return h;
