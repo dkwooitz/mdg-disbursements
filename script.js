@@ -1059,7 +1059,7 @@
     // Return the banking section to its Main view for the next claim.
     bankEditingMain = false;
     const bankSrc = document.getElementById('bankSource');
-    if (bankSrc) bankSrc.value = 'main';
+    if (bankSrc) bankSrc.value = mainBanking ? 'main' : 'other';
     if (typeof applyBankSource === 'function') applyBankSource();
     recalc();
   }
@@ -1638,7 +1638,6 @@
     if (h) h.readOnly = !editable;
     if (a) a.readOnly = !editable;
     const n = document.getElementById('bankName'); if (n) n.disabled = !editable;
-    if (bankProofBtn) bankProofBtn.disabled = !editable;
   }
   function setBankProofLabel(text) {
     const el = document.getElementById('bankProofLabel') || (bankProofBtn && bankProofBtn.querySelector('.pf-label'));
@@ -1651,15 +1650,16 @@
     const saveBtn = document.getElementById('bankSaveMain');
     const updateBtn = document.getElementById('bankUpdateMain');
     if (src === 'main' && mainBanking && !bankEditingMain) {
-      // Show the saved main details, read-only.
+      // Show the saved main details, read-only. Use "Update" to change them.
       bankFill(mainBanking);
       bankSetEditable(false);
-      setBankProofLabel(mainBanking.proofName ? ('On file: ' + mainBanking.proofName) : 'Bank letter on file');
+      if (bankProofBtn) bankProofBtn.style.display = 'none';
       if (saveBtn) saveBtn.style.display = 'none';
       if (updateBtn) updateBtn.style.display = 'inline-block';
     } else {
-      // Editable: first-time Main setup, updating Main, or Other.
+      // Editable: first-time Main setup, updating Main, or Other. Upload always available.
       bankSetEditable(true);
+      if (bankProofBtn) bankProofBtn.style.display = '';
       if (saveBtn) saveBtn.style.display = 'inline-block';
       if (updateBtn) updateBtn.style.display = 'none';
       if (!(bankProofInput.files && bankProofInput.files.length) && !(bankProofBtn && bankProofBtn.classList.contains('has-file'))) {
@@ -1675,7 +1675,7 @@
     if (!error && data) mainBanking = data.main_banking || null;
     bankEditingMain = false;
     const srcEl = document.getElementById('bankSource');
-    if (srcEl) srcEl.value = 'main';
+    if (srcEl) srcEl.value = mainBanking ? 'main' : 'other';
     applyBankSource();
   }
   function bankFieldsValid() {
@@ -1704,8 +1704,6 @@
     if (bankProofInput) bankProofInput.value = '';
     if (bankProofBtn) bankProofBtn.classList.remove('has-file');
     showToast('Main bank details saved.', 4000);
-    const srcEl = document.getElementById('bankSource');
-    if (srcEl) srcEl.value = 'main';
     applyBankSource();
   }
 
