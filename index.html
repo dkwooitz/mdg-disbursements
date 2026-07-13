@@ -608,13 +608,26 @@
   </div>
 </div>
 
-<!-- Generic confirmation dialog -->
-<div id="confirmModal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.5);align-items:center;justify-content:center;padding:24px;">
-  <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:24px;max-width:420px;width:100%;">
-    <p id="confirmMsg" style="font-size:15px;color:var(--text);margin:0 0 20px;line-height:1.5;"></p>
+<!-- Bank details: confirmation (unique ids — must not clash with the app's delete modal) -->
+<div id="bankConfirmModal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.5);align-items:center;justify-content:center;padding:24px;">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:24px;max-width:440px;width:100%;">
+    <p id="bankConfirmMsg" style="font-size:15px;color:var(--text);margin:0 0 20px;line-height:1.5;"></p>
     <div style="display:flex;gap:8px;justify-content:flex-end;">
-      <button type="button" id="confirmCancel" class="mini-btn">Cancel</button>
-      <button type="button" id="confirmContinue" class="btn-danger">Continue</button>
+      <button type="button" id="bankConfirmCancel" class="mini-btn">Cancel</button>
+      <button type="button" id="bankConfirmContinue" class="btn-accent">Continue</button>
+    </div>
+  </div>
+</div>
+
+<!-- Bank details: re-upload the new bank letter -->
+<div id="bankReupModal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.5);align-items:center;justify-content:center;padding:24px;">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:24px;max-width:440px;width:100%;">
+    <h3 style="margin:0 0 6px;font-size:17px;color:var(--text);">Upload your new bank confirmation letter</h3>
+    <p style="font-size:14px;color:var(--text-dim);margin:0 0 18px;line-height:1.5;">Your details will be read from the letter and filled in automatically. Please check every digit before saving.</p>
+    <input id="bankReupInput" type="file" accept="image/*,application/pdf" hidden>
+    <button type="button" id="bankReupPick" class="btn-accent" style="width:100%;">Choose bank confirmation letter</button>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+      <button type="button" id="bankReupCancel" class="mini-btn">Cancel</button>
     </div>
   </div>
 </div>

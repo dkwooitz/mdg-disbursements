@@ -1729,18 +1729,55 @@
     applyBankSource();
   }
 
-  // Generic confirmation dialog (Cancel / Continue).
+  // Bank-details confirmation dialog. Uses its OWN ids so it never touches the
+  // app's delete-claim modal (which also lives at #confirmModal).
   function confirmAction(message, onContinue) {
-    const modal = document.getElementById('confirmModal');
-    const msg = document.getElementById('confirmMsg');
-    const ok = document.getElementById('confirmContinue');
-    const cancel = document.getElementById('confirmCancel');
+    const modal = document.getElementById('bankConfirmModal');
+    const msg = document.getElementById('bankConfirmMsg');
+    const ok = document.getElementById('bankConfirmContinue');
+    const cancel = document.getElementById('bankConfirmCancel');
     if (!modal || !ok || !cancel) { if (window.confirm(message)) onContinue(); return; }
     msg.textContent = message;
     modal.style.display = 'flex';
     const close = () => { modal.style.display = 'none'; ok.onclick = null; cancel.onclick = null; };
     ok.onclick = () => { close(); onContinue(); };
     cancel.onclick = close;
+  }
+
+  // Second popup: pick the new bank letter, let the AI read it, and fill the fields.
+  function openBankReupload() {
+    const modal = document.getElementById('bankReupModal');
+    const pick = document.getElementById('bankReupPick');
+    const input = document.getElementById('bankReupInput');
+    const cancel = document.getElementById('bankReupCancel');
+    if (!modal || !pick || !input) { bankEditingMain = true; applyBankSource(); return; }
+
+    modal.style.display = 'flex';
+    const close = () => { modal.style.display = 'none'; pick.onclick = null; cancel.onclick = null; input.onchange = null; };
+
+    pick.onclick = () => input.click();
+    cancel.onclick = close;
+
+    input.onchange = () => {
+      const f = input.files && input.files[0];
+      if (!f) return;
+      close();
+      // Put the form into "editing my main details" mode…
+      bankEditingMain = true;
+      applyBankSource();
+      // …hand the file to the normal bank-proof input so the existing pipeline
+      // (AI read + save) works exactly as it does for a direct upload.
+      try {
+        const dt = new DataTransfer();
+        dt.items.add(f);
+        bankProofInput.files = dt.files;
+      } catch (e) { /* older browsers: the AI read below still fills the fields */ }
+      bankProofBtn.classList.add('has-file');
+      bankProofBtn.classList.remove('field-error');
+      bankProofBtn.innerHTML = uploadSvg + '<span class="pf-label">' + escapeHtml(f.name) + '</span>';
+      readBankLetter(f);              // AI reads the letter and auto-fills the fields
+      input.value = '';
+    };
   }
 
   (function wireBankSource() {
@@ -1775,6 +1812,7 @@
         if (bankProofInput) bankProofInput.value = '';
         if (bankProofBtn) bankProofBtn.classList.remove('has-file');
         applyBankSource();
+        openBankReupload();          // second popup: upload the new letter, AI reads it
       });
     });
   })();
