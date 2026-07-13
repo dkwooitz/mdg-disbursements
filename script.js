@@ -1042,6 +1042,13 @@
     };
   }
 
+  // Reads a field's trimmed value. Top-level so every function can use it
+  // (collectClaim has its own private `val`, which is not in scope out here).
+  function fieldVal(id) {
+    const el = document.getElementById(id);
+    return el ? el.value.trim() : '';
+  }
+
   // Returns the banking to record on a claim, based on the selected source.
   function collectBanking(proofFile) {
     const src = document.getElementById('bankSource');
@@ -1053,7 +1060,7 @@
       };
     }
     return {
-      holder: val('bankHolder'), bank: val('bankName'), acc: val('bankAcc'),
+      holder: fieldVal('bankHolder'), bank: fieldVal('bankName'), acc: fieldVal('bankAcc'),
       proofName: proofFile ? proofFile.name : (editingProofName || ''),
       proofPath: editingProofPath || '',
       _file: proofFile || null, source: 'other'
@@ -1690,7 +1697,7 @@
     applyBankSource();
   }
   function bankFieldsValid() {
-    return val('bankHolder') && val('bankName') && val('bankAcc') &&
+    return fieldVal('bankHolder') && fieldVal('bankName') && fieldVal('bankAcc') &&
       (bankProofInput.files && bankProofInput.files.length > 0);
   }
   async function saveMainBanking() {
@@ -1707,7 +1714,7 @@
       if (error) { console.error('Main bank proof upload failed:', error.message); showToast('Could not upload the bank letter.', 4000); return; }
       proofPath = path; proofName = f.name;
     }
-    const mb = { holder: val('bankHolder'), bank: val('bankName'), acc: val('bankAcc'), proofPath: proofPath, proofName: proofName };
+    const mb = { holder: fieldVal('bankHolder'), bank: fieldVal('bankName'), acc: fieldVal('bankAcc'), proofPath: proofPath, proofName: proofName };
     const { error } = await sb.from('profiles').update({ main_banking: mb }).eq('id', user.id);
     if (error) {
       console.error('Save main banking failed:', error.message);
