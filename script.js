@@ -674,7 +674,7 @@
     el.addEventListener('input', () => el.classList.remove('field-error'))
   );
   const FIELD_LABELS = {
-    empSite: 'Site', empMachine: 'Machine', empNo: 'Employee number',
+    empSite: 'Site', empMachine: 'Machine', empNo: 'Employee number', empDept: 'Department',
     bankHolder: 'Name of account holder', bankName: 'Bank', bankAcc: 'Account number',
     kmReason: 'Reason for travelling'
   };
@@ -728,7 +728,7 @@
     }
 
     const data = collectClaim();
-    saveEmpNo(data.employee.empNo);   // remember it for next time
+    saveProfileFields(data.employee.empNo, data.employee.dept);   // remember for next time
 
     if (editingRef) {
       // Update the recalled claim in place, preserving its reference, date, status and progress.
@@ -985,6 +985,7 @@
     setVal('empName', c.employee.name);
     setVal('empEmail', c.employee.email);
     setVal('empNo', c.employee.empNo || savedEmpNo || '');
+    setVal('empDept', c.employee.dept || savedDept || '');
     setVal('kmReason', c.employee.kmReason || '');
     setVal('empSite', c.employee.site);
     setVal('empMachine', c.employee.machine);
@@ -1104,6 +1105,7 @@
       stage: 1, // 0 filled in · 1 submitted to HOD · 2 submitted for payment · 3 paid
       employee: {
         name: val('empName'), email: val('empEmail'), empNo: val('empNo'),
+        dept: val('empDept'),
         site: val('empSite'), machine: val('empMachine'), carReg: val('carReg'),
         kmReason: val('kmReason')
       },
@@ -1142,7 +1144,9 @@
     otherBody.innerHTML = ''; addRow('other'); addRow('other');
     ['bankHolder', 'bankName', 'bankAcc', 'carReg', 'kmReason'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     const empNoEl = document.getElementById('empNo');
-    if (empNoEl && savedEmpNo) empNoEl.value = savedEmpNo;   // keep the remembered number
+    if (empNoEl && savedEmpNo) empNoEl.value = savedEmpNo;   // keep the remembered values
+    const empDeptEl = document.getElementById('empDept');
+    if (empDeptEl && savedDept) empDeptEl.value = savedDept;
     bankProofInput.value = '';
     bankProofBtn.classList.remove('has-file', 'field-error', 'busy');
     bankProofBtn.innerHTML = uploadSvg + '<span class="pf-label">Upload bank confirmation letter</span>';
@@ -1231,6 +1235,7 @@
     let h = '<table class="detail-kv">' +
       row2('Employee', c.employee.name) +
       row2('Employee number', c.employee.empNo || '') +
+      row2('Department', c.employee.dept || '') +
       row2('Email', c.employee.email) + row2('Site', c.employee.site) +
       row2('Machine', c.employee.machine) +
       row2('Car registration', c.employee.carReg) +
@@ -2038,30 +2043,41 @@
     if (navDash) navDash.addEventListener('click', loadDashboard);
   })();
 
-  // The employee number is saved to the user's profile, so it only has to be
-  // entered once — after that it fills itself in on every new claim.
+  // Employee number and department are saved to the user's profile, so they only
+  // have to be entered once — after that they fill themselves in on every claim.
+  // (Both will come from the Workforce app once that integration is possible.)
   let savedEmpNo = '';
-  async function loadEmpNo() {
+  let savedDept = '';
+  async function loadProfileFields() {
     const sb = window.mdgAuth && window.mdgAuth.client;
     const user = window.mdgAuth && window.mdgAuth.user;
     if (!sb || !user) return;
-    const { data, error } = await sb.from('profiles').select('employee_no').eq('id', user.id).single();
-    if (error) { console.error('Could not load employee number:', error.message); return; }
+    const { data, error } = await sb.from('profiles')
+      .select('employee_no, department').eq('id', user.id).single();
+    if (error) { console.error('Could not load profile fields:', error.message); return; }
     savedEmpNo = (data && data.employee_no) || '';
-    const el = document.getElementById('empNo');
-    if (el && savedEmpNo) el.value = savedEmpNo;
+    savedDept  = (data && data.department) || '';
+    const noEl = document.getElementById('empNo');
+    const dpEl = document.getElementById('empDept');
+    if (noEl && savedEmpNo) noEl.value = savedEmpNo;
+    if (dpEl && savedDept)  dpEl.value = savedDept;
   }
-  async function saveEmpNo(no) {
+  async function saveProfileFields(empNo, dept) {
     const sb = window.mdgAuth && window.mdgAuth.client;
     const user = window.mdgAuth && window.mdgAuth.user;
-    if (!sb || !user || !no || no === savedEmpNo) return;
-    const { error } = await sb.from('profiles').update({ employee_no: no }).eq('id', user.id);
-    if (error) { console.error('Could not save employee number:', error.message); return; }
-    savedEmpNo = no;
+    if (!sb || !user) return;
+    const patch = {};
+    if (empNo && empNo !== savedEmpNo) patch.employee_no = empNo;
+    if (dept && dept !== savedDept)    patch.department = dept;
+    if (!Object.keys(patch).length) return;                 // nothing changed
+    const { error } = await sb.from('profiles').update(patch).eq('id', user.id);
+    if (error) { console.error('Could not save profile fields:', error.message); return; }
+    if (patch.employee_no) savedEmpNo = patch.employee_no;
+    if (patch.department)  savedDept  = patch.department;
   }
 
   window.mdgApp = window.mdgApp || {};
-  window.mdgApp.onAuthed = function () { loadClaims(); checkAdmin(); loadMainBanking(); loadEmpNo(); };
+  window.mdgApp.onAuthed = function () { loadClaims(); checkAdmin(); loadMainBanking(); loadProfileFields(); };
 
   recalc();
 
