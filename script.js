@@ -630,23 +630,34 @@
   document.querySelectorAll('[data-required]').forEach(el =>
     el.addEventListener('input', () => el.classList.remove('field-error'))
   );
+  const FIELD_LABELS = {
+    empSite: 'Site', empMachine: 'Machine', bankHolder: 'Name of account holder',
+    bankName: 'Bank', bankAcc: 'Account number'
+  };
   const submitMsg = document.getElementById('submitMsg');
   document.getElementById('submitBtn').addEventListener('click', async () => {
     let missing = 0;
+    const missingNames = [];
+    let firstBad = null;
     document.querySelectorAll('[data-required]').forEach(el => {
       const ok = el.value && el.value.trim() !== '';
       el.classList.toggle('field-error', !ok);
-      if (!ok) missing++;
+      if (!ok) {
+        missing++;
+        missingNames.push(FIELD_LABELS[el.id] || el.id);
+        if (!firstBad) firstBad = el;
+      }
     });
     const bankSrcEl = document.getElementById('bankSource');
     const usingMain = bankSrcEl && bankSrcEl.value === 'main' && mainBanking;
     const proofOk = usingMain || (bankProofInput.files && bankProofInput.files.length > 0) || (editingRef && editingProofName);
     bankProofBtn.classList.toggle('field-error', !proofOk);
-    if (!proofOk) missing++;
+    if (!proofOk) { missing++; missingNames.push('Proof of account'); if (!firstBad) firstBad = bankProofBtn; }
 
     if (missing > 0) {
-      submitMsg.textContent = 'Please complete the required fields (marked *) and attach your proof of account before submitting.';
+      submitMsg.textContent = 'Please complete: ' + missingNames.join(', ') + '.';
       submitMsg.className = 'submit-msg err';
+      if (firstBad && firstBad.scrollIntoView) firstBad.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
 
@@ -1698,7 +1709,11 @@
     }
     const mb = { holder: val('bankHolder'), bank: val('bankName'), acc: val('bankAcc'), proofPath: proofPath, proofName: proofName };
     const { error } = await sb.from('profiles').update({ main_banking: mb }).eq('id', user.id);
-    if (error) { console.error('Save main banking failed:', error.message); showToast('Could not save main bank details.', 4000); return; }
+    if (error) {
+      console.error('Save main banking failed:', error.message);
+      showToast('Could not save main bank details: ' + error.message, 8000);
+      return;
+    }
     mainBanking = mb;
     bankEditingMain = false;
     if (bankProofInput) bankProofInput.value = '';
