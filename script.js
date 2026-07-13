@@ -254,7 +254,7 @@
       const texts = tr.querySelectorAll('input[type=text]');
       rows.push({ from: texts[0] ? texts[0].value : '', to: texts[1] ? texts[1].value : '', km: tr.querySelector('.km-input').value });
     });
-    const flagged = kmMatchesPrevious(rows, typeof editingRef !== 'undefined' ? editingRef : null);
+    const flagged = kmMatchesPrevious(rows, typeof editingId !== 'undefined' ? editingId : null);
     const el = document.getElementById('kmFlag');
     if (el) el.classList.toggle('hidden', !flagged);
   }
@@ -338,7 +338,7 @@
       if (fp.sig && r.dataset.sig && r.dataset.sig === fp.sig) return true;
     }
     for (const c of claims) {
-      if (editingRef && c.ref === editingRef) continue;
+      if (exceptId && c.id === exceptId) continue;
       for (const it of (c.other || [])) {
         if (fp.hash && it.hash && it.hash === fp.hash) return true;
         if (fp.sig && it.sig && it.sig === fp.sig) return true;
@@ -386,12 +386,12 @@
     return from + '|' + to + '|' + km;
   }
   // Does any travelling line here match the route + distance of a previous disbursement?
-  function kmMatchesPrevious(kmList, exceptRef) {
+  function kmMatchesPrevious(kmList, exceptId) {
     for (const r of (kmList || [])) {
       const sig = kmSig(r);
       if (!sig) continue;
       for (const c of claims) {
-        if (exceptRef && c.ref === exceptRef) continue;
+        if (exceptId && c.id === exceptId) continue;
         for (const it of (c.km || [])) {
           if (kmSig(it) === sig) return true;
         }
@@ -683,8 +683,8 @@
     const data = collectClaim();
     saveProfileFields(data.employee.empNo, data.employee.dept);
 
-    if (editingRef) {
-      const c = claims.find(x => x.ref === editingRef);
+    if (editingId) {
+      const c = byId(editingId);
       if (c) {
         Object.assign(c, data, { id: c.id, ref: c.ref, submitted: c.submitted, status: 'Draft', stage: 0 });
         await withSubmitBusy(() => uploadClaimProofs(c));
@@ -753,7 +753,7 @@
 
     const bankSrcEl = document.getElementById('bankSource');
     const usingMain = bankSrcEl && bankSrcEl.value === 'main' && mainBanking;
-    const proofOk = usingMain || (bankProofInput.files && bankProofInput.files.length > 0) || (editingRef && editingProofName);
+    const proofOk = usingMain || (bankProofInput.files && bankProofInput.files.length > 0) || (editingId && editingProofName);
     bankProofBtn.classList.toggle('field-error', !proofOk);
     if (!proofOk) { missing++; missingNames.push('Proof of account'); if (!firstBad) firstBad = bankProofBtn; }
 
@@ -767,9 +767,9 @@
     const data = collectClaim();
     saveProfileFields(data.employee.empNo, data.employee.dept);   // remember for next time
 
-    if (editingRef) {
+    if (editingId) {
       // Update the recalled claim in place, preserving its reference, date, status and progress.
-      const c = claims.find(x => x.ref === editingRef);
+      const c = byId(editingId);
       if (c) {
         c.employee = data.employee;
         c.banking = data.banking;
@@ -926,7 +926,17 @@
 
   function fmtDate(d)     { return new Date(d).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }); }
   function fmtDateTime(d) { return new Date(d).toLocaleString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
-  function newRef() { return 'DSB-' + new Date().getFullYear() + '-' + String(refSeq++).padStart(4, '0'); }
+  // Look a claim up by its unique id. (A reference number is for humans and is NOT
+  // guaranteed unique — two claims can share one — so never identify a claim by ref.)
+  function byId(id) { return claims.find(x => x.id === id); }
+
+  function newRef() {
+    // Skip any reference already in use, so a collision can't produce two identical refs.
+    let ref;
+    do { ref = 'DSB-' + new Date().getFullYear() + '-' + String(refSeq++).padStart(4, '0'); }
+    while (claims.some(c => c.ref === ref));
+    return ref;
+  }
 
   function typeLabel(c) {
     const k = c.kmTotal > 0, o = c.otherTotal > 0;
@@ -952,7 +962,7 @@
     return '<div class="stepper"><div class="stepper-nodes">' + nodes + '</div></div>';
   }
 
-  function renderPrev(highlightRef) {
+  function renderPrev(highlightId) {
     const tb = document.getElementById('prevRows');
     if (!tb) return;
     const sorted = claims.slice().sort((a, b) => new Date(b.submitted) - new Date(a.submitted));
@@ -965,7 +975,7 @@
       const tr = document.createElement('tr');
       const isDraft = c.status === 'Draft';
       const isWithdrawn = c.status === 'Withdrawn';
-      tr.className = 'claim-row' + (c.ref === highlightRef ? ' row-new' : '') + (isWithdrawn ? ' withdrawn' : '');
+      tr.className = 'claim-row' + (c.id === highlightId ? ' row-new' : '') + (isWithdrawn ? ' withdrawn' : '');
       const flagBadge = c.kmFlagged
         ? ' <span class="km-flag-badge" title="The kilometres and/or the route reflects a previous disbursement. Please ensure accuracy and integrity of disbursement.">!</span>'
         : '';
@@ -976,13 +986,13 @@
       //   Draft      → can be edited (Recall) and deleted
       //   Submitted  → locked; can only be Withdrawn
       //   Withdrawn  → read-only, kept in the list for the audit trail
-      let actions = '<button class="mini-btn" data-view="' + c.ref + '">View</button> ' +
-                    '<button class="mini-btn" data-pdf="' + c.ref + '">PDF</button>';
+      let actions = '<button class="mini-btn" data-view="' + c.id + '">View</button> ' +
+                    '<button class="mini-btn" data-pdf="' + c.id + '">PDF</button>';
       if (isDraft) {
-        actions += ' <button class="mini-btn" data-recall="' + c.ref + '">Edit</button>' +
-                   ' <button class="mini-btn danger" data-delete="' + c.ref + '">Delete</button>';
+        actions += ' <button class="mini-btn" data-recall="' + c.id + '">Edit</button>' +
+                   ' <button class="mini-btn danger" data-delete="' + c.id + '">Delete</button>';
       } else if (!isWithdrawn) {
-        actions += ' <button class="mini-btn danger" data-withdraw="' + c.ref + '">Withdraw</button>';
+        actions += ' <button class="mini-btn danger" data-withdraw="' + c.id + '">Withdraw</button>';
       }
 
       tr.innerHTML =
@@ -999,15 +1009,15 @@
       pr.innerHTML = '<td colspan="6">' + stepperHtml(typeof c.stage === 'number' ? c.stage : 1) + '</td>';
       tb.appendChild(pr);
     });
-    tb.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => openClaim(claims.find(x => x.ref === b.dataset.view))));
-    tb.querySelectorAll('[data-pdf]').forEach(b => b.addEventListener('click', () => generatePDF(claims.find(x => x.ref === b.dataset.pdf))));
+    tb.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => openClaim(byId(b.dataset.view))));
+    tb.querySelectorAll('[data-pdf]').forEach(b => b.addEventListener('click', () => generatePDF(byId(b.dataset.pdf))));
     tb.querySelectorAll('[data-recall]').forEach(b => b.addEventListener('click', () => recallClaim(b.dataset.recall)));
     tb.querySelectorAll('[data-delete]').forEach(b => b.addEventListener('click', () => deleteClaim(b.dataset.delete)));
     tb.querySelectorAll('[data-withdraw]').forEach(b => b.addEventListener('click', () => withdrawClaim(b.dataset.withdraw)));
   }
 
   // ---- Recall: reopen a claim into New Claim for editing (progress is preserved) ----
-  let editingRef = null;
+  let editingId = null;
   let editingProofName = '';
   let editingProofPath = '';
   const editBanner = document.getElementById('editBanner');
@@ -1075,8 +1085,8 @@
     recalc();
   }
 
-  function startEdit(ref, proofName, proofPath) {
-    editingRef = ref;
+  function startEdit(id, ref, proofName, proofPath) {
+    editingId = id;
     editingProofName = proofName || '';
     editingProofPath = proofPath || '';
     document.getElementById('editRef').textContent = ref;
@@ -1084,7 +1094,7 @@
     if (submitBtnEl) submitBtnEl.textContent = 'Update claim';
   }
   function endEdit() {
-    editingRef = null;
+    editingId = null;
     editingProofName = '';
     editingProofPath = '';
     if (editBanner) editBanner.classList.add('hidden');
@@ -1097,16 +1107,17 @@
     showView('previous');
   });
 
-  function recallClaim(ref) {
-    const c = claims.find(x => x.ref === ref);
+  function recallClaim(id) {
+    const c = byId(id);
     if (!c) return;
+    const ref = c.ref;
     // Only a draft may be edited. Once submitted, a claim is locked.
     if (c.status !== 'Draft') {
       showToast('Submitted claims cannot be edited. Withdraw it instead.', 5000);
       return;
     }
     populateForm(c);
-    startEdit(ref, c.banking.proofName, c.banking.proofPath);
+    startEdit(c.id, ref, c.banking.proofName, c.banking.proofPath);
     // Show the recalled claim's banking as editable "Other" details.
     bankEditingMain = false;
     const bankSrc = document.getElementById('bankSource');
@@ -1119,31 +1130,33 @@
 
   // Withdrawing keeps the claim on record (greyed out) so the audit trail stays
   // complete — unlike deleting, which is only ever allowed on an unsubmitted draft.
-  function withdrawClaim(ref) {
-    const c = claims.find(x => x.ref === ref);
+  function withdrawClaim(id) {
+    const c = byId(id);
     if (!c || c.status === 'Withdrawn' || c.status === 'Draft') return;
+    const ref = c.ref;
     showConfirm('Withdraw disbursement ' + ref + '? It will no longer be actioned, but stays on record and cannot be edited or deleted.', () => {
       c.status = 'Withdrawn';
       c.withdrawnAt = new Date();
       renderPrev();
       saveClaims();
       showToast('Disbursement ' + ref + ' withdrawn. It remains on record.', 5000);
-    });
+    }, 'Withdraw');
   }
 
-  function deleteClaim(ref) {
-    const c = claims.find(x => x.ref === ref);
+  function deleteClaim(id) {
+    const c = byId(id);
     if (!c) return;
+    const ref = c.ref;
     // Only drafts may be deleted. A submitted claim must remain on record.
     if (c.status !== 'Draft') {
       showToast('Submitted claims cannot be deleted. Withdraw it instead — it stays on record.', 6000);
       return;
     }
     showConfirm('Are you sure you want to delete this draft? Once deleted, it cannot be retrieved.', () => {
-      const i = claims.findIndex(x => x.ref === ref);
+      const i = claims.findIndex(x => x.id === id);
       let removedId = null;
       if (i >= 0) { removedId = claims[i].id; claims.splice(i, 1); }
-      if (editingRef === ref) { endEdit(); resetForm(); }
+      if (editingId === id) { endEdit(); resetForm(); }
       recomputeKmFlags();
       renderPrev();
       saveClaims();
@@ -1444,8 +1457,10 @@
   /* ---- Confirmation dialog ---- */
   const confirmModal = document.getElementById('confirmModal');
   let confirmCb = null;
-  function showConfirm(message, onConfirm) {
+  function showConfirm(message, onConfirm, okLabel) {
     document.getElementById('confirmMsg').textContent = message;
+    const okBtn = document.getElementById('confirmOk');
+    if (okBtn) okBtn.textContent = okLabel || 'Delete';
     confirmCb = onConfirm;
     confirmModal.classList.remove('hidden');
   }
