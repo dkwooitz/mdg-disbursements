@@ -51,6 +51,10 @@
   .btn-accent:disabled{opacity:.6;cursor:default;}
   .btn-danger{background:#d9483b;color:#fff;border:none;border-radius:8px;padding:9px 16px;font-size:14px;font-weight:600;cursor:pointer;}
   .btn-danger:hover{background:#c23e32;}
+  /* A withdrawn claim stays in the list (for audit) but is visibly inactive. */
+  .claim-row.withdrawn td{opacity:.55;}
+  .pill-draft{background:var(--field);color:var(--text-dim);}
+  .pill-withdrawn{background:#e6e6e6;color:#5a5a5a;}
   /* Dashboard */
   .dash-filters{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;}
   .dash-filters > div{display:flex;flex-direction:column;gap:4px;}
@@ -359,7 +363,7 @@
       </div>
 
       <div class="actions">
-        <button class="btn btn-ghost">Save draft</button>
+        <button class="btn btn-ghost" id="draftBtn" type="button">Save draft</button>
         <button class="btn btn-primary" id="submitBtn">Submit to HOD</button>
       </div>
       <div class="submit-msg" id="submitMsg"></div>

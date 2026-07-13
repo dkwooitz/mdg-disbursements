@@ -354,19 +354,21 @@
     showToast(msg, 6500);
   }
   // Signature of a whole disbursement (employee + all line items + total) to catch re-submissions.
-  // A claim is "late" if it was SUBMITTED more than 90 days after a slip's purchase
-  // date (policy 5.4: 90 calendar days from the transaction date to disburse). Because
-  // the check is anchored to the submission date, a claim that was compliant when it
-  // was submitted stays clean forever, even as the slip keeps ageing.
+  // A claim is "late" if it was SUBMITTED more than 90 days after an expense date
+  // (policy 5.4: 90 calendar days from the transaction date to disburse). This covers
+  // BOTH travelling rows and other-claim slips — the policy applies to any expense.
+  // Anchored to the submission date, so a claim that was compliant when submitted
+  // stays clean forever, even as the expense keeps ageing.
   function isLateClaim(c) {
-    if (!c || !c.submitted || !Array.isArray(c.other)) return false;
+    if (!c || !c.submitted) return false;
     const sub = new Date(c.submitted);
     if (isNaN(sub)) return false;
-    return c.other.some(o => {
-      if (!o || !o.date) return false;
-      const d = new Date(o.date);
+    const rows = [].concat(Array.isArray(c.km) ? c.km : [], Array.isArray(c.other) ? c.other : []);
+    return rows.some(r => {
+      if (!r || !r.date) return false;
+      const d = new Date(r.date);
       if (isNaN(d)) return false;
-      return (sub.getTime() - d.getTime()) / 86400000 > 90;   // submitted >90 days after purchase
+      return (sub.getTime() - d.getTime()) / 86400000 > 90;
     });
   }
 
@@ -673,6 +675,41 @@
   document.querySelectorAll('[data-required]').forEach(el =>
     el.addEventListener('input', () => el.classList.remove('field-error'))
   );
+  /* ---- Save draft ---- */
+  // A draft is saved without the full submit validation, so a half-finished claim
+  // is never lost. It stays editable and deletable until it is submitted.
+  const draftBtn = document.getElementById('draftBtn');
+  if (draftBtn) draftBtn.addEventListener('click', async () => {
+    const data = collectClaim();
+    saveProfileFields(data.employee.empNo, data.employee.dept);
+
+    if (editingRef) {
+      const c = claims.find(x => x.ref === editingRef);
+      if (c) {
+        Object.assign(c, data, { id: c.id, ref: c.ref, submitted: c.submitted, status: 'Draft', stage: 0 });
+        await withSubmitBusy(() => uploadClaimProofs(c));
+        renderPrev(c.ref);
+        saveClaims();
+        endEdit();
+        resetForm();
+        showToast('Draft ' + c.ref + ' saved. You can keep editing it from Previous Claims.', 5000);
+        showView('previous');
+        return;
+      }
+    }
+
+    data.status = 'Draft';
+    data.stage = 0;
+    await withSubmitBusy(() => uploadClaimProofs(data));
+    claims.unshift(data);
+    renderPrev(data.ref);
+    saveClaims();
+    resetForm();
+    if (submitMsg) { submitMsg.textContent = ''; submitMsg.className = 'submit-msg'; }
+    showToast('Draft ' + data.ref + ' saved. You can finish it later from Previous Claims.', 5000);
+    showView('previous');
+  });
+
   const FIELD_LABELS = {
     empSite: 'Site', empMachine: 'Machine', empNo: 'Employee number', empDept: 'Department',
     bankHolder: 'Name of account holder', bankName: 'Bank', bankAcc: 'Account number',
@@ -739,10 +776,19 @@
         if (!(bankProofInput.files && bankProofInput.files.length) && editingProofName) c.banking.proofName = editingProofName;
         c.km = data.km; c.other = data.other;
         c.kmTotal = data.kmTotal; c.otherTotal = data.otherTotal; c.grandTotal = data.grandTotal;
+        // Submitting a draft turns it into a real submission — and locks it.
+        const wasDraft = c.status === 'Draft';
+        if (wasDraft) {
+          c.status = 'Pending HOD';
+          c.stage = 1;
+          c.submitted = new Date();   // the 90-day check anchors to the real submission date
+        }
         await withSubmitBusy(function () { return uploadClaimProofs(c); });
         recomputeKmFlags();
         renderPrev(c.ref);
-        submitMsg.textContent = 'Claim ' + c.ref + ' updated. Its progress was kept.';
+        submitMsg.textContent = wasDraft
+          ? 'Draft ' + c.ref + ' submitted to your HOD.'
+          : 'Claim ' + c.ref + ' updated. Its progress was kept.';
         submitMsg.className = 'submit-msg ok';
         saveClaims();
       }
@@ -890,7 +936,11 @@
     return '—';
   }
   function pillFor(status) {
-    const cls = status === 'Approved' ? 'pill-ok' : (status === 'Rejected' ? 'pill-no' : (status === 'Recalled' ? 'pill-recalled' : 'pill-wait'));
+    const map = {
+      'Approved': 'pill-ok', 'Rejected': 'pill-no', 'Recalled': 'pill-recalled',
+      'Draft': 'pill-draft', 'Withdrawn': 'pill-withdrawn'
+    };
+    const cls = map[status] || 'pill-wait';
     return '<span class="pill ' + cls + '">' + status + '</span>';
   }
 
@@ -913,23 +963,35 @@
     }
     sorted.forEach(c => {
       const tr = document.createElement('tr');
-      tr.className = 'claim-row' + (c.ref === highlightRef ? ' row-new' : '');
+      const isDraft = c.status === 'Draft';
+      const isWithdrawn = c.status === 'Withdrawn';
+      tr.className = 'claim-row' + (c.ref === highlightRef ? ' row-new' : '') + (isWithdrawn ? ' withdrawn' : '');
       const flagBadge = c.kmFlagged
         ? ' <span class="km-flag-badge" title="The kilometres and/or the route reflects a previous disbursement. Please ensure accuracy and integrity of disbursement.">!</span>'
         : '';
       const lateBadge = isLateClaim(c)
         ? ' <span title="Disbursement submitted 90 days after initial day of purchase. Falls outside policy terms." style="display:inline-block;background:#f5a623;color:#3a2c00;font-weight:700;border-radius:4px;padding:0 6px;font-size:12px;cursor:help;">&#9888;</span>'
         : '';
+      // Actions depend on status:
+      //   Draft      → can be edited (Recall) and deleted
+      //   Submitted  → locked; can only be Withdrawn
+      //   Withdrawn  → read-only, kept in the list for the audit trail
+      let actions = '<button class="mini-btn" data-view="' + c.ref + '">View</button> ' +
+                    '<button class="mini-btn" data-pdf="' + c.ref + '">PDF</button>';
+      if (isDraft) {
+        actions += ' <button class="mini-btn" data-recall="' + c.ref + '">Edit</button>' +
+                   ' <button class="mini-btn danger" data-delete="' + c.ref + '">Delete</button>';
+      } else if (!isWithdrawn) {
+        actions += ' <button class="mini-btn danger" data-withdraw="' + c.ref + '">Withdraw</button>';
+      }
+
       tr.innerHTML =
         '<td class="ref">' + c.ref + flagBadge + lateBadge + '</td>' +
         '<td>' + fmtDate(c.submitted) + '</td>' +
         '<td>' + typeLabel(c) + '</td>' +
         '<td style="text-align:right">' + money.format(c.grandTotal) + '</td>' +
         '<td>' + pillFor(c.status) + '</td>' +
-        '<td style="text-align:right"><button class="mini-btn" data-view="' + c.ref + '">View</button> ' +
-          '<button class="mini-btn" data-pdf="' + c.ref + '">PDF</button> ' +
-          '<button class="mini-btn" data-recall="' + c.ref + '">Recall</button> ' +
-          '<button class="mini-btn danger" data-delete="' + c.ref + '">Delete</button></td>';
+        '<td style="text-align:right">' + actions + '</td>';
       tb.appendChild(tr);
 
       const pr = document.createElement('tr');
@@ -941,6 +1003,7 @@
     tb.querySelectorAll('[data-pdf]').forEach(b => b.addEventListener('click', () => generatePDF(claims.find(x => x.ref === b.dataset.pdf))));
     tb.querySelectorAll('[data-recall]').forEach(b => b.addEventListener('click', () => recallClaim(b.dataset.recall)));
     tb.querySelectorAll('[data-delete]').forEach(b => b.addEventListener('click', () => deleteClaim(b.dataset.delete)));
+    tb.querySelectorAll('[data-withdraw]').forEach(b => b.addEventListener('click', () => withdrawClaim(b.dataset.withdraw)));
   }
 
   // ---- Recall: reopen a claim into New Claim for editing (progress is preserved) ----
@@ -1037,6 +1100,11 @@
   function recallClaim(ref) {
     const c = claims.find(x => x.ref === ref);
     if (!c) return;
+    // Only a draft may be edited. Once submitted, a claim is locked.
+    if (c.status !== 'Draft') {
+      showToast('Submitted claims cannot be edited. Withdraw it instead.', 5000);
+      return;
+    }
     populateForm(c);
     startEdit(ref, c.banking.proofName, c.banking.proofPath);
     // Show the recalled claim's banking as editable "Other" details.
@@ -1049,8 +1117,29 @@
     showToast('Disbursement ' + ref + ' reopened for editing. Its progress is unchanged.', 5000);
   }
 
+  // Withdrawing keeps the claim on record (greyed out) so the audit trail stays
+  // complete — unlike deleting, which is only ever allowed on an unsubmitted draft.
+  function withdrawClaim(ref) {
+    const c = claims.find(x => x.ref === ref);
+    if (!c || c.status === 'Withdrawn' || c.status === 'Draft') return;
+    showConfirm('Withdraw disbursement ' + ref + '? It will no longer be actioned, but stays on record and cannot be edited or deleted.', () => {
+      c.status = 'Withdrawn';
+      c.withdrawnAt = new Date();
+      renderPrev();
+      saveClaims();
+      showToast('Disbursement ' + ref + ' withdrawn. It remains on record.', 5000);
+    });
+  }
+
   function deleteClaim(ref) {
-    showConfirm('Are you sure that you want to delete this submitted disbursement? Once deleted, it cannot be retrieved.', () => {
+    const c = claims.find(x => x.ref === ref);
+    if (!c) return;
+    // Only drafts may be deleted. A submitted claim must remain on record.
+    if (c.status !== 'Draft') {
+      showToast('Submitted claims cannot be deleted. Withdraw it instead — it stays on record.', 6000);
+      return;
+    }
+    showConfirm('Are you sure you want to delete this draft? Once deleted, it cannot be retrieved.', () => {
       const i = claims.findIndex(x => x.ref === ref);
       let removedId = null;
       if (i >= 0) { removedId = claims[i].id; claims.splice(i, 1); }
