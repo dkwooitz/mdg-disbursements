@@ -560,6 +560,56 @@
     readBankLetter(f);
   });
 
+  // Common ways a bank names itself on a letter, mapped to our dropdown option.
+  // (An FNB letter, for example, usually says "First National Bank, a division of
+  // FirstRand Bank Limited" — so several spellings must land on the same option.)
+  const BANK_ALIASES = {
+    'fnb': 'First National Bank',
+    'firstrand': 'First National Bank',
+    'first national': 'First National Bank',
+    'absa': 'Absa Bank Limited',
+    'african bank': 'African Bank Limited',
+    'bidvest': 'Bidvest Bank Limited',
+    'capitec': 'Capitec Bank Limited',
+    'discovery': 'Discovery Bank Limited',
+    'investec': 'Investec Bank Limited',
+    'nedbank': 'Nedbank Limited',
+    'sasfin': 'Sasfin Bank Limited',
+    'standard bank': 'The Standard Bank of South Africa Limited',
+    'standard': 'The Standard Bank of South Africa Limited',
+    'gotyme': 'GoTyme Bank Limited',
+    'old mutual': 'OM Bank Limited',
+    'om bank': 'OM Bank Limited'
+  };
+
+  // Turn whatever the AI read into one of the dropdown's options.
+  function matchBankOption(selectEl, aiValue) {
+    if (!selectEl || !aiValue) return null;
+    const key = String(aiValue).toLowerCase().trim();
+    const opts = Array.from(selectEl.options).filter(o => o.value);
+
+    // 1. Exact match on an option.
+    let match = opts.find(o => o.value.toLowerCase() === key);
+    if (match) return match.value;
+
+    // 2. A known alias appearing anywhere in what the AI said.
+    for (const alias in BANK_ALIASES) {
+      if (key.includes(alias)) {
+        const target = BANK_ALIASES[alias];
+        if (opts.some(o => o.value === target)) return target;
+      }
+    }
+
+    // 3. An option's distinctive name appearing in the AI's answer (or vice versa).
+    match = opts.find(o => {
+      const name = o.value.toLowerCase()
+        .replace(/\b(bank|limited|ltd|of|south|africa|the|a|division)\b/g, ' ')
+        .replace(/\s+/g, ' ').trim();
+      return name && (key.includes(name) || name.includes(key));
+    });
+    return match ? match.value : null;
+  }
+
   async function readBankLetter(file) {
     const holder = document.getElementById('bankHolder');
     const bank   = document.getElementById('bankName');
@@ -594,11 +644,14 @@
       const parsed = JSON.parse(clean);
       if (parsed.accountHolder) holder.value = parsed.accountHolder;
       if (parsed.bank) {
-        const opts = Array.from(bank.options);
-        const key = String(parsed.bank).toLowerCase();
-        let match = opts.find(o => o.value.toLowerCase() === key);
-        if (!match) match = opts.find(o => o.value && (o.value.toLowerCase().includes(key) || key.includes(o.value.toLowerCase().split(' ')[0])));
-        if (match) bank.value = match.value;
+        const chosen = matchBankOption(bank, parsed.bank);
+        if (chosen) {
+          bank.value = chosen;
+        } else {
+          // Never silently drop what the AI read — surface it so it can be checked.
+          console.warn('Bank not matched to a dropdown option. AI returned:', parsed.bank);
+          showToast('Couldn’t match “' + parsed.bank + '” to a bank in the list — please select it.', 6000);
+        }
       }
       if (parsed.accountNumber) acc.value = String(parsed.accountNumber);
       [holder, bank, acc].forEach(el => { if (el.value) el.classList.remove('field-error'); });
