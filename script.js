@@ -119,29 +119,19 @@
     card.addEventListener('click', () => applyTheme(card.dataset.themeVal))
   );
 
-  // Presentation poster shown by Logout (temporary — revert after the presentation).
-  const posterOverlay = document.getElementById('posterOverlay');
-  function showPoster() {
-    if (posterOverlay) posterOverlay.classList.remove('hidden');
-    if (accountMenu) { accountMenu.classList.add('hidden'); accountBtn.setAttribute('aria-expanded', 'false'); }
-  }
-  function hidePoster() { if (posterOverlay) posterOverlay.classList.add('hidden'); }
-  const posterBack = document.getElementById('posterBack');
-  if (posterBack) posterBack.addEventListener('click', hidePoster);
-
   // Settings page: session actions
   const setHubBtn = document.getElementById('setHub');
   if (setHubBtn) setHubBtn.addEventListener('click', () =>
     showToast('“Back to Hub” will link to the Master Drilling hub once it’s connected.', 5000));
   const setLogoutBtn = document.getElementById('setLogout');
   if (setLogoutBtn) setLogoutBtn.addEventListener('click', function () {
-    if (window.mdgAuth) window.mdgAuth.signOut(); else showPoster();
+    if (window.mdgAuth) window.mdgAuth.signOut();
   });
 
   // Account-menu logout signs the user out
   const menuLogout = document.querySelector('.btn-logout');
   if (menuLogout) menuLogout.addEventListener('click', function () {
-    if (window.mdgAuth) window.mdgAuth.signOut(); else showPoster();
+    if (window.mdgAuth) window.mdgAuth.signOut();
   });
 
   /* ---- Sidebar show/hide ---- */
@@ -496,7 +486,7 @@
   /* ---- Banking details: proof upload + AI reader ---- */
   const SA_BANKS = [
     'Absa Bank Limited', 'African Bank Limited', 'Bidvest Bank Limited', 'Capitec Bank Limited',
-    'Discovery Bank Limited', 'FirstRand Limited', 'Investec Bank Limited', 'OM Bank Limited',
+    'Discovery Bank Limited', 'First National Bank', 'Investec Bank Limited', 'OM Bank Limited',
     'Nedbank Limited', 'Sasfin Bank Limited', 'The Standard Bank of South Africa Limited', 'GoTyme Bank Limited'
   ];
   (function () {
@@ -631,9 +621,20 @@
     el.addEventListener('input', () => el.classList.remove('field-error'))
   );
   const FIELD_LABELS = {
-    empSite: 'Site', empMachine: 'Machine', bankHolder: 'Name of account holder',
-    bankName: 'Bank', bankAcc: 'Account number'
+    empSite: 'Site', empMachine: 'Machine', empNo: 'Employee number',
+    bankHolder: 'Name of account holder', bankName: 'Bank', bankAcc: 'Account number',
+    kmReason: 'Reason for travelling'
   };
+
+  // True if any kilometres row has actual travel on it.
+  function hasKmRows() {
+    return Array.from(kmBody.querySelectorAll('tr')).some(tr => {
+      const dist = parseFloat(tr.querySelector('.km-input') && tr.querySelector('.km-input').value) || 0;
+      const texts = tr.querySelectorAll('input[type=text]');
+      return dist > 0 || (texts[0] && texts[0].value.trim()) || (texts[1] && texts[1].value.trim());
+    });
+  }
+
   const submitMsg = document.getElementById('submitMsg');
   document.getElementById('submitBtn').addEventListener('click', async () => {
     let missing = 0;
@@ -648,6 +649,18 @@
         if (!firstBad) firstBad = el;
       }
     });
+
+    // Reason for travelling is required ONLY when kilometres are being claimed.
+    const kmReasonEl = document.getElementById('kmReason');
+    const kmReasonNeeded = hasKmRows();
+    const kmReasonOk = !kmReasonNeeded || (kmReasonEl && kmReasonEl.value.trim() !== '');
+    if (kmReasonEl) kmReasonEl.classList.toggle('field-error', !kmReasonOk);
+    if (!kmReasonOk) {
+      missing++;
+      missingNames.push('Reason for travelling');
+      if (!firstBad) firstBad = kmReasonEl;
+    }
+
     const bankSrcEl = document.getElementById('bankSource');
     const usingMain = bankSrcEl && bankSrcEl.value === 'main' && mainBanking;
     const proofOk = usingMain || (bankProofInput.files && bankProofInput.files.length > 0) || (editingRef && editingProofName);
@@ -662,6 +675,7 @@
     }
 
     const data = collectClaim();
+    saveEmpNo(data.employee.empNo);   // remember it for next time
 
     if (editingRef) {
       // Update the recalled claim in place, preserving its reference, date, status and progress.
@@ -917,6 +931,8 @@
   function populateForm(c) {
     setVal('empName', c.employee.name);
     setVal('empEmail', c.employee.email);
+    setVal('empNo', c.employee.empNo || savedEmpNo || '');
+    setVal('kmReason', c.employee.kmReason || '');
     setVal('empSite', c.employee.site);
     setVal('empMachine', c.employee.machine);
     setVal('carReg', c.employee.carReg);
@@ -1034,8 +1050,9 @@
       status: 'Pending HOD',
       stage: 1, // 0 filled in · 1 submitted to HOD · 2 submitted for payment · 3 paid
       employee: {
-        name: val('empName'), email: val('empEmail'),
-        site: val('empSite'), machine: val('empMachine'), carReg: val('carReg')
+        name: val('empName'), email: val('empEmail'), empNo: val('empNo'),
+        site: val('empSite'), machine: val('empMachine'), carReg: val('carReg'),
+        kmReason: val('kmReason')
       },
       banking: collectBanking(proofFile),
       km, other, kmTotal, otherTotal, grandTotal: kmTotal + otherTotal
@@ -1070,7 +1087,9 @@
   function resetForm() {
     kmBody.innerHTML = ''; addRow('km'); addRow('km');
     otherBody.innerHTML = ''; addRow('other'); addRow('other');
-    ['bankHolder', 'bankName', 'bankAcc', 'carReg'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    ['bankHolder', 'bankName', 'bankAcc', 'carReg', 'kmReason'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    const empNoEl = document.getElementById('empNo');
+    if (empNoEl && savedEmpNo) empNoEl.value = savedEmpNo;   // keep the remembered number
     bankProofInput.value = '';
     bankProofBtn.classList.remove('has-file', 'field-error', 'busy');
     bankProofBtn.innerHTML = uploadSvg + '<span class="pf-label">Upload bank confirmation letter</span>';
@@ -1158,9 +1177,11 @@
   function buildDetail(c) {
     let h = '<table class="detail-kv">' +
       row2('Employee', c.employee.name) +
+      row2('Employee number', c.employee.empNo || '') +
       row2('Email', c.employee.email) + row2('Site', c.employee.site) +
       row2('Machine', c.employee.machine) +
-      row2('Car registration', c.employee.carReg) + '</table>';
+      row2('Car registration', c.employee.carReg) +
+      (c.employee.kmReason ? row2('Reason for travelling', c.employee.kmReason) : '') + '</table>';
 
     h += '<h4>Banking details</h4><table class="detail-kv">' +
       row2('Account holder', c.banking.holder) + row2('Bank', c.banking.bank) +
@@ -1964,8 +1985,30 @@
     if (navDash) navDash.addEventListener('click', loadDashboard);
   })();
 
+  // The employee number is saved to the user's profile, so it only has to be
+  // entered once — after that it fills itself in on every new claim.
+  let savedEmpNo = '';
+  async function loadEmpNo() {
+    const sb = window.mdgAuth && window.mdgAuth.client;
+    const user = window.mdgAuth && window.mdgAuth.user;
+    if (!sb || !user) return;
+    const { data, error } = await sb.from('profiles').select('employee_no').eq('id', user.id).single();
+    if (error) { console.error('Could not load employee number:', error.message); return; }
+    savedEmpNo = (data && data.employee_no) || '';
+    const el = document.getElementById('empNo');
+    if (el && savedEmpNo) el.value = savedEmpNo;
+  }
+  async function saveEmpNo(no) {
+    const sb = window.mdgAuth && window.mdgAuth.client;
+    const user = window.mdgAuth && window.mdgAuth.user;
+    if (!sb || !user || !no || no === savedEmpNo) return;
+    const { error } = await sb.from('profiles').update({ employee_no: no }).eq('id', user.id);
+    if (error) { console.error('Could not save employee number:', error.message); return; }
+    savedEmpNo = no;
+  }
+
   window.mdgApp = window.mdgApp || {};
-  window.mdgApp.onAuthed = function () { loadClaims(); checkAdmin(); loadMainBanking(); };
+  window.mdgApp.onAuthed = function () { loadClaims(); checkAdmin(); loadMainBanking(); loadEmpNo(); };
 
   recalc();
 
