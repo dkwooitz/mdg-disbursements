@@ -2015,136 +2015,273 @@
     }
   }
 
-  /* ---- Dashboard (admin only): company-wide disbursement control ---- */
+  /* ---- Dashboard (admin only): drill down from total > site > machine > employee > claims ---- */
   let dashRecords = [];
+  let dashLevel = 0;          // 0 all sites · 1 machines of a site · 2 employees on a machine · 3 that employee's claims
+  let dashSite = null, dashMachine = null, dashEmployee = null;
+  let dashChart = null;
+  const DASH_HUES = ['#2a78d6','#1baf7a','#eda100','#008300','#4a3aa7','#e34948','#e87ba4','#eb6834'];
 
   function dashEsc(s) {
-    return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
-      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
+  // Pull EVERY user's claims. Non-admins are blocked by RLS, so this only
+  // returns rows to an account that is actually an admin.
   async function loadDashboard() {
     const sb = window.mdgAuth && window.mdgAuth.client;
-    if (!sb || !window.mdgIsAdmin) return;   // admins only; RLS enforces this too
+    if (!sb) return;
     const { data, error } = await sb.from('disbursements')
       .select('data, created_at').order('created_at', { ascending: false });
     if (error) { console.error('Dashboard load failed:', error.message); return; }
     dashRecords = (data || []).map(row => {
       const c = row.data || {};
-      const emp = c.employee || {};
+      const e = c.employee || {};
       return {
-        site: emp.site || '—',
-        machine: emp.machine || '—',
-        employee: emp.name || '—',
-        total: (typeof c.grandTotal === 'number') ? c.grandTotal : 0,
+        site: e.site || 'Unassigned',
+        machine: e.machine || 'Unassigned',
+        employee: e.name || 'Unknown',
+        total: typeof c.grandTotal === 'number' ? c.grandTotal : 0,
         date: c.submitted || row.created_at,
+        status: c.status || '',
+        ref: c.ref || '',
         km: c.km || [],
         other: c.other || [],
         claim: c
       };
     });
-    populateDashFilters();
     renderDashboard();
   }
 
-  function dashUnique(arr) { return Array.from(new Set(arr)).filter(Boolean).sort(); }
-  function dashFilters() {
-    const g = id => { const el = document.getElementById(id); return el ? el.value : ''; };
-    return { site: g('dSite'), machine: g('dMachine'), employee: g('dEmployee'), from: g('dFrom'), to: g('dTo') };
-  }
-  function dashInRange(dateStr, from, to) {
-    const d = new Date(dateStr);
-    if (from && d < new Date(from + 'T00:00:00')) return false;
-    if (to && d > new Date(to + 'T23:59:59')) return false;
+  function dashInRange(r) {
+    const f = document.getElementById('dFrom').value;
+    const t = document.getElementById('dTo').value;
+    const d = (r.date || '').toString().slice(0, 10);
+    if (f && d < f) return false;
+    if (t && d > t) return false;
     return true;
   }
-  function dashFiltered() {
-    const f = dashFilters();
-    return dashRecords.filter(r =>
-      (!f.site || r.site === f.site) &&
-      (!f.machine || r.machine === f.machine) &&
-      (!f.employee || r.employee === f.employee) &&
-      dashInRange(r.date, f.from, f.to));
-  }
-  function dashFillSelect(id, options, allLabel, keep) {
-    const sel = document.getElementById(id);
-    if (!sel) return;
-    sel.innerHTML = '<option value="">' + allLabel + '</option>' +
-      options.map(o => '<option>' + dashEsc(o) + '</option>').join('');
-    sel.value = (keep && options.indexOf(keep) >= 0) ? keep : '';
-  }
-  // Cascade: machines shown depend on the chosen site; employees on site + machine.
-  function populateDashFilters() {
-    const f = dashFilters();
-    dashFillSelect('dSite', dashUnique(dashRecords.map(r => r.site)), 'All sites', f.site);
-    const siteScope = dashRecords.filter(r => !f.site || r.site === f.site);
-    dashFillSelect('dMachine', dashUnique(siteScope.map(r => r.machine)), 'All machines', f.machine);
-    const machScope = siteScope.filter(r => !f.machine || r.machine === f.machine);
-    dashFillSelect('dEmployee', dashUnique(machScope.map(r => r.employee)), 'All employees', f.employee);
+
+  // The rows in scope for the level we're currently looking at.
+  function dashScope() {
+    let rows = dashRecords.filter(dashInRange);
+    if (dashLevel >= 1) rows = rows.filter(r => r.site === dashSite);
+    if (dashLevel >= 2) rows = rows.filter(r => r.machine === dashMachine);
+    if (dashLevel >= 3) rows = rows.filter(r => r.employee === dashEmployee);
+    return rows;
   }
 
-  function dashBreakdown(tableId, rows, key, label) {
-    const map = {};
-    rows.forEach(r => { const k = r[key] || '—'; (map[k] = map[k] || { count: 0, total: 0 }); map[k].count++; map[k].total += r.total || 0; });
-    const entries = Object.keys(map).map(k => ({ k: k, count: map[k].count, total: map[k].total }))
-      .sort((a, b) => b.total - a.total);   // biggest first — the ones worth questioning
-    const tb = document.querySelector('#' + tableId + ' tbody');
-    if (!tb) return;
-    if (!entries.length) { tb.innerHTML = '<tr><td style="color:var(--text-dim)">No claims in view.</td></tr>'; return; }
-    tb.innerHTML = '<tr><th>' + label + '</th><th style="text-align:right">Claims</th><th style="text-align:right">Total</th></tr>' +
-      entries.map(e => '<tr><td>' + dashEsc(e.k) + '</td><td style="text-align:right">' + e.count + '</td><td style="text-align:right">' + money.format(e.total) + '</td></tr>').join('');
+  function dashSlices(rows) {
+    const key = dashLevel === 0 ? 'site' : (dashLevel === 1 ? 'machine' : 'employee');
+    const g = {};
+    rows.forEach(r => { g[r[key]] = (g[r[key]] || 0) + r.total; });
+    const labels = Object.keys(g).sort((a, b) => g[b] - g[a]);   // biggest first
+    return { labels: labels, values: labels.map(l => g[l]) };
   }
 
-  function dashDetail(rows) {
-    const box = document.getElementById('dDetail');
-    if (!box) return;
-    if (!rows.length) { box.innerHTML = '<p style="color:var(--text-dim)">No claims match these filters.</p>'; return; }
+  function renderDashboard() {
+    const rows = dashScope();
+    const total = rows.reduce((s, r) => s + r.total, 0);
+
+    const titles = [
+      'Total disbursed · all sites',
+      'Total disbursed · ' + dashSite,
+      dashSite + ' · ' + dashMachine,
+      dashEmployee + ' · ' + dashMachine + ' · ' + dashSite
+    ];
+    document.getElementById('dStatLabel').textContent = titles[dashLevel];
+    document.getElementById('dStatValue').textContent = money.format(total);
+    document.getElementById('dStatSub').textContent = rows.length + (rows.length === 1 ? ' claim' : ' claims');
+
+    // Breadcrumb
+    const cb = document.getElementById('dCrumbs');
+    cb.innerHTML = '';
+    const parts = [{ t: 'All sites', lv: 0 }];
+    if (dashLevel >= 1) parts.push({ t: dashSite, lv: 1 });
+    if (dashLevel >= 2) parts.push({ t: dashMachine, lv: 2 });
+    if (dashLevel >= 3) parts.push({ t: dashEmployee, lv: 3 });
+    parts.forEach((p, i) => {
+      const last = i === parts.length - 1;
+      const el = document.createElement(last ? 'span' : 'a');
+      el.textContent = p.t;
+      if (last) el.className = 'here';
+      else el.addEventListener('click', () => { dashGoTo(p.lv); });
+      cb.appendChild(el);
+      if (!last) { const s = document.createElement('span'); s.className = 'sep'; s.textContent = '›'; cb.appendChild(s); }
+    });
+
+    const chartWrap = document.querySelector('.dash-chart-wrap');
+    const legend = document.getElementById('dLegend');
+    const hint = document.getElementById('dHint');
+    const claimsCard = document.getElementById('dClaimsCard');
+
+    if (dashLevel === 3) {
+      // Deepest level: this employee's individual claims.
+      chartWrap.style.display = 'none';
+      legend.innerHTML = '';
+      hint.textContent = 'Every claim ' + dashEmployee + ' submitted here. Open one to see the full detail and banking.';
+      claimsCard.style.display = '';
+      document.getElementById('dClaimsTitle').textContent = 'Claims by ' + dashEmployee;
+      renderDashClaims(rows);
+      if (dashChart) { dashChart.destroy(); dashChart = null; }
+      return;
+    }
+
+    chartWrap.style.display = '';
+    claimsCard.style.display = 'none';
+    hint.textContent = 'Click a slice to drill down into the data.';
+
+    const d = dashSlices(rows);
+
+    legend.innerHTML = d.labels.map((l, i) => {
+      const pct = total ? Math.round(d.values[i] / total * 100) : 0;
+      return '<span class="item"><i style="background:' + DASH_HUES[i % 8] + '"></i>' +
+             dashEsc(l) + ' · ' + money.format(d.values[i]) + ' (' + pct + '%)</span>';
+    }).join('');
+
+    if (dashChart) dashChart.destroy();
+    if (!window.Chart || !d.labels.length) {
+      if (!d.labels.length) legend.innerHTML = '<span class="item">No claims in this period.</span>';
+      return;
+    }
+    dashChart = new window.Chart(document.getElementById('dDonut'), {
+      type: 'doughnut',
+      data: {
+        labels: d.labels,
+        datasets: [{
+          data: d.values,
+          backgroundColor: d.labels.map((_, i) => DASH_HUES[i % 8]),
+          borderWidth: 2,
+          borderColor: getComputedStyle(document.body).backgroundColor || '#fff'
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, cutout: '58%',
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => ctx.label + ': ' + money.format(ctx.raw) } }
+        },
+        onClick: (e, els) => {
+          if (!els.length) return;
+          const label = d.labels[els[0].index];
+          if (dashLevel === 0) { dashSite = label; dashLevel = 1; }
+          else if (dashLevel === 1) { dashMachine = label; dashLevel = 2; }
+          else if (dashLevel === 2) { dashEmployee = label; dashLevel = 3; }
+          renderDashboard();
+        },
+        onHover: (e, els) => { e.native.target.style.cursor = els.length ? 'pointer' : 'default'; }
+      }
+    });
+  }
+
+  function dashGoTo(level) {
+    dashLevel = level;
+    if (level < 3) dashEmployee = null;
+    if (level < 2) dashMachine = null;
+    if (level < 1) dashSite = null;
+    renderDashboard();
+  }
+
+  function renderDashClaims(rows) {
+    const box = document.getElementById('dClaimsList');
     const sorted = rows.slice().sort((a, b) => new Date(b.date) - new Date(a.date));
+    if (!sorted.length) { box.innerHTML = '<p style="color:var(--text-dim);font-size:13px;">No claims in this period.</p>'; return; }
     box.innerHTML = sorted.map((r, i) => {
       const items = [];
       (r.km || []).forEach(k => items.push('Travel: ' + (k.from || '?') + ' → ' + (k.to || '?') + ' (' + (k.km || 0) + ' km)'));
       (r.other || []).forEach(o => items.push((o.desc || 'Other') + ' — ' + (o.currency || 'ZAR') + ' ' + (o.amount != null ? (+o.amount).toFixed(2) : '')));
       return '<div class="dash-claim">' +
-        '<div class="dash-claim-head"><strong>' + dashEsc(r.employee) + '</strong>' +
-        '<span>' + dashEsc(r.site) + ' · ' + dashEsc(r.machine) + '</span>' +
+        '<div class="dash-claim-head"><strong>' + dashEsc(r.ref) + '</strong>' +
         '<span>' + fmtDate(r.date) + '</span>' +
+        '<span>' + dashEsc(r.status) + '</span>' +
         '<span class="dash-claim-total">' + money.format(r.total) + '</span>' +
-        '<button class="mini-btn" data-dash-idx="' + i + '">View</button></div>' +
+        '<button class="mini-btn" data-dash-open="' + i + '">View</button></div>' +
         '<div class="dash-claim-items">' + (items.length ? items.map(dashEsc).join('  ·  ') : 'No line items') + '</div>' +
         '</div>';
     }).join('');
-    box.querySelectorAll('[data-dash-idx]').forEach(b => {
+    box.querySelectorAll('[data-dash-open]').forEach(b => {
       b.addEventListener('click', () => {
-        const rec = sorted[parseInt(b.dataset.dashIdx, 10)];
-        if (rec && rec.claim) openClaim(rec.claim);   // full detail incl. banking
+        const rec = sorted[parseInt(b.dataset.dashOpen, 10)];
+        if (rec && rec.claim) openClaim(rec.claim);      // full detail incl. banking
       });
     });
   }
 
-  function renderDashboard() {
-    const rows = dashFiltered();
-    const total = rows.reduce((s, r) => s + (r.total || 0), 0);
-    const tEl = document.getElementById('dTotal'); if (tEl) tEl.textContent = money.format(total);
-    const cEl = document.getElementById('dCount'); if (cEl) cEl.textContent = String(rows.length);
-    dashBreakdown('dBySite', rows, 'site', 'Site');
-    dashBreakdown('dByMachine', rows, 'machine', 'Machine');
-    dashBreakdown('dByEmployee', rows, 'employee', 'Employee');
-    dashDetail(rows);
+  /* ---- CSV export: exports exactly what you're looking at ---- */
+  function csvCell(v) {
+    const s = String(v == null ? '' : v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+  function downloadCsv(filename, rows) {
+    const csv = rows.map(r => r.map(csvCell).join(',')).join('\r\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });   // BOM so Excel reads it cleanly
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+  function exportDashboardCsv() {
+    const rows = dashScope();
+    const from = document.getElementById('dFrom').value || 'start';
+    const to = document.getElementById('dTo').value || 'today';
+    const total = rows.reduce((s, r) => s + r.total, 0);
+    const out = [];
+
+    if (dashLevel === 3) {
+      out.push(['Reference', 'Date', 'Status', 'Employee', 'Site', 'Machine', 'Total (ZAR)']);
+      rows.slice().sort((a, b) => new Date(b.date) - new Date(a.date))
+        .forEach(r => out.push([r.ref, (r.date || '').toString().slice(0, 10), r.status, r.employee, r.site, r.machine, r.total.toFixed(2)]));
+    } else {
+      const heading = dashLevel === 0 ? 'Site' : (dashLevel === 1 ? 'Machine' : 'Employee');
+      const d = dashSlices(rows);
+      out.push([heading, 'Total (ZAR)', 'Share (%)', 'Claims']);
+      d.labels.forEach((l, i) => {
+        const key = dashLevel === 0 ? 'site' : (dashLevel === 1 ? 'machine' : 'employee');
+        const count = rows.filter(r => r[key] === l).length;
+        const pct = total ? (d.values[i] / total * 100).toFixed(1) : '0.0';
+        out.push([l, d.values[i].toFixed(2), pct, count]);
+      });
+    }
+    out.push([]);
+    out.push(['Total', total.toFixed(2), '', rows.length]);
+    out.push(['Period', from + ' to ' + to]);
+    if (dashSite) out.push(['Site', dashSite]);
+    if (dashMachine) out.push(['Machine', dashMachine]);
+    if (dashEmployee) out.push(['Employee', dashEmployee]);
+
+    const scope = ['all-sites', dashSite, dashMachine, dashEmployee]
+      .slice(0, dashLevel + 1).join('-').replace(/[^\w\-]+/g, '_');
+    downloadCsv('disbursements-' + scope + '-' + from + '-to-' + to + '.csv', out);
+  }
+
+  function dashSetThisMonth() {
+    const now = new Date();
+    const first = new Date(now.getFullYear(), now.getMonth(), 1);
+    const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const iso = d => d.toISOString().slice(0, 10);
+    document.getElementById('dFrom').value = iso(first);
+    document.getElementById('dTo').value = iso(last);
   }
 
   (function wireDashboard() {
-    ['dSite', 'dMachine', 'dEmployee', 'dFrom', 'dTo'].forEach(id => {
+    ['dFrom', 'dTo'].forEach(id => {
       const el = document.getElementById(id);
-      if (el) el.addEventListener('change', () => { populateDashFilters(); renderDashboard(); });
+      if (el) el.addEventListener('change', renderDashboard);
     });
+    const thisMonth = document.getElementById('dThisMonth');
+    if (thisMonth) thisMonth.addEventListener('click', () => { dashSetThisMonth(); renderDashboard(); });
     const reset = document.getElementById('dReset');
-    if (reset) reset.addEventListener('click', () => {
-      ['dSite', 'dMachine', 'dEmployee', 'dFrom', 'dTo'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-      populateDashFilters(); renderDashboard();
-    });
-    // Refresh the data every time the Dashboard tab is opened.
-    const navDash = document.querySelector('.nav-item[data-view="dashboard"]');
-    if (navDash) navDash.addEventListener('click', loadDashboard);
+    if (reset) reset.addEventListener('click', () => { dashSetThisMonth(); dashGoTo(0); });
+    const exp = document.getElementById('dExport');
+    if (exp) exp.addEventListener('click', exportDashboardCsv);
+
+    dashSetThisMonth();   // Finance reconciles by month, so default to the current one.
+
+    // Refresh whenever the Dashboard tab is opened.
+    document.querySelectorAll('.nav-item[data-view="dashboard"]').forEach(n =>
+      n.addEventListener('click', () => { dashGoTo(0); loadDashboard(); }));
   })();
 
   // Employee number and department are saved to the user's profile, so they only

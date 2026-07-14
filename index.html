@@ -16,6 +16,7 @@
 <link rel="stylesheet" href="styles.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <!-- Supabase client library (used for sign-in and, later, the database) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
@@ -56,6 +57,27 @@
   .pill-draft{background:var(--field);color:var(--text-dim);}
   .pill-withdrawn{background:#e6e6e6;color:#5a5a5a;}
   /* Dashboard */
+  .dash-filters{display:flex;flex-wrap:wrap;align-items:end;gap:10px;}
+  .dash-field label{display:block;font-size:12px;color:var(--text-dim);margin-bottom:4px;}
+  .dash-field input{background:var(--field);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-size:14px;}
+  .dash-stat{text-align:center;margin-bottom:6px;}
+  .dash-stat-label{font-size:13px;color:var(--text-dim);}
+  .dash-stat-value{font-size:30px;font-weight:600;color:var(--text);line-height:1.2;}
+  .dash-stat-sub{font-size:12px;color:var(--text-dim);}
+  .dash-crumbs{display:flex;align-items:center;gap:6px;font-size:13px;min-height:22px;margin:14px 0 10px;flex-wrap:wrap;}
+  .dash-crumbs a{color:var(--accent);cursor:pointer;text-decoration:none;}
+  .dash-crumbs a:hover{text-decoration:underline;}
+  .dash-crumbs .sep{color:var(--text-dim);}
+  .dash-crumbs .here{color:var(--text);font-weight:600;}
+  .dash-legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--text-dim);margin-bottom:10px;}
+  .dash-legend span.item{display:flex;align-items:center;gap:5px;}
+  .dash-legend i{width:10px;height:10px;border-radius:2px;display:inline-block;}
+  .dash-chart-wrap{position:relative;width:100%;height:320px;}
+  .dash-hint{font-size:12px;color:var(--text-dim);text-align:center;margin-top:10px;}
+  .dash-claim{border-top:1px solid var(--border);padding:10px 0;}
+  .dash-claim-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px;}
+  .dash-claim-total{margin-left:auto;font-weight:600;}
+  .dash-claim-items{font-size:12px;color:var(--text-dim);margin-top:4px;}
   .dash-filters{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;}
   .dash-filters > div{display:flex;flex-direction:column;gap:4px;}
   .dash-filters label{font-size:12px;color:var(--text-dim);}
@@ -507,35 +529,33 @@
 
         <section class="card">
           <div class="dash-filters">
-            <div><label>Site</label><select id="dSite"><option value="">All sites</option></select></div>
-            <div><label>Machine</label><select id="dMachine"><option value="">All machines</option></select></div>
-            <div><label>Employee</label><select id="dEmployee"><option value="">All employees</option></select></div>
-            <div><label>From</label><input type="date" id="dFrom"></div>
-            <div><label>To</label><input type="date" id="dTo"></div>
-            <button type="button" id="dReset" class="mini-btn">Reset filters</button>
+            <div class="dash-field"><label>From</label><input type="date" id="dFrom"></div>
+            <div class="dash-field"><label>To</label><input type="date" id="dTo"></div>
+            <button type="button" id="dThisMonth" class="mini-btn">This month</button>
+            <button type="button" id="dReset" class="mini-btn">Reset</button>
+            <button type="button" id="dExport" class="mini-btn">Export CSV</button>
           </div>
         </section>
 
         <section class="card">
-          <div class="dash-summary">
-            <div class="dash-stat"><span class="dash-stat-label">Total disbursements (in view)</span><span class="dash-stat-value" id="dTotal">R 0,00</span></div>
-            <div class="dash-stat"><span class="dash-stat-label">Number of claims</span><span class="dash-stat-value" id="dCount">0</span></div>
+          <div class="dash-stat">
+            <div class="dash-stat-label" id="dStatLabel">Total disbursed · all sites</div>
+            <div class="dash-stat-value" id="dStatValue">R 0,00</div>
+            <div class="dash-stat-sub" id="dStatSub">0 claims</div>
           </div>
+
+          <div id="dCrumbs" class="dash-crumbs"></div>
+          <div id="dLegend" class="dash-legend"></div>
+
+          <div class="dash-chart-wrap">
+            <canvas id="dDonut" role="img" aria-label="Donut chart of disbursement totals. Click a slice to drill down by site, then machine, then employee."></canvas>
+          </div>
+          <p id="dHint" class="dash-hint">Click a slice to drill down into the data.</p>
         </section>
 
-        <section class="card">
-          <h3>By site</h3>
-          <table class="dash-table" id="dBySite"><tbody></tbody></table>
-          <h3 style="margin-top:22px">By machine</h3>
-          <table class="dash-table" id="dByMachine"><tbody></tbody></table>
-          <h3 style="margin-top:22px">By employee</h3>
-          <table class="dash-table" id="dByEmployee"><tbody></tbody></table>
-        </section>
-
-        <section class="card">
-          <h3>Claims in view</h3>
-          <p class="page-sub" style="margin-top:0">Individual claims matching the filters — scan the line items for anything that doesn't belong.</p>
-          <div id="dDetail"></div>
+        <section class="card" id="dClaimsCard" style="display:none;">
+          <h3 id="dClaimsTitle">Claims</h3>
+          <div id="dClaimsList"></div>
         </section>
       </div><!-- /view-dashboard -->
 
