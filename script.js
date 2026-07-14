@@ -835,7 +835,11 @@
     const sb   = window.mdgAuth && window.mdgAuth.client;
     const user = window.mdgAuth && window.mdgAuth.user;
     if (!sb || !user) return;                       // not signed in yet
-    const rows = claims.map(c => ({
+    // Safety net: only ever write rows this user owns. If a claim without an owner
+    // (or someone else's) ever reached this list, writing it would be rejected by the
+    // database and take the whole save down with it — losing the real claim.
+    const mine = claims.filter(c => !c.owner_id || c.owner_id === user.id);
+    const rows = mine.map(c => ({
       id: c.id,
       owner_id: user.id,                            // stamps the claim with its owner
       ref: c.ref,
@@ -845,15 +849,24 @@
     }));
     if (!rows.length) return;
     const { error } = await sb.from('disbursements').upsert(rows, { onConflict: 'id' });
-    if (error) console.error('Could not save claims:', error.message);
+    if (error) {
+      console.error('Could not save claims:', error.message);
+      showToast('Your claim could not be saved: ' + error.message, 8000);
+    }
   }
 
   async function loadClaims() {
     const sb = window.mdgAuth && window.mdgAuth.client;
-    if (!sb) return;
+    const user = window.mdgAuth && window.mdgAuth.user;
+    if (!sb || !user) return;
+    // Previous Claims is strictly the signed-in person's own claims. This filter is
+    // essential: an admin's RLS policy lets them READ everyone's rows, so without
+    // it an admin would see (and try to re-save) other people's claims here.
+    // Company-wide visibility belongs on the Dashboard, not in this list.
     const { data, error } = await sb
       .from('disbursements')
       .select('data, created_at')
+      .eq('owner_id', user.id)
       .order('created_at', { ascending: false });   // newest first
     if (error) { console.error('Could not load claims:', error.message); return; }
     claims.length = 0;
