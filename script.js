@@ -451,8 +451,22 @@
     try {
       const prompt = 'This is a receipt for an employee expense claim. Read it and respond with ONLY a JSON object — no markdown, no code fences, no commentary — in exactly this shape: {"date":"the purchase date as YYYY-MM-DD, or empty string if not visible","description":"a concise 2 to 5 word description of the purchase or merchant, suitable for an expense line","amount": the total amount paid as a plain number with no currency symbol or thousands separator, or 0 if not visible,"currency":"the three-letter ISO code of the currency on the receipt; must be one of ZAR, USD, EUR, AUD, BRL, PEN; use ZAR if you cannot tell"}.';
       const raw = await callAIProxy(b64, file.type || 'image/jpeg', prompt);
-      const clean = raw.replace(/```json/g, '').replace(/```/g, '').trim();
-      const parsed = JSON.parse(clean);
+      const clean = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+      // The model should return pure JSON, but be forgiving: pull out the {...} block
+      // if it wrapped it in any stray text, and never let a bad reply throw silently.
+      let parsed = null;
+      if (clean) {
+        try {
+          parsed = JSON.parse(clean);
+        } catch (e1) {
+          const m = clean.match(/\{[\s\S]*\}/);
+          if (m) { try { parsed = JSON.parse(m[0]); } catch (e2) { /* fall through */ } }
+        }
+      }
+      if (!parsed) {
+        console.warn('Receipt reader: could not parse AI reply. Raw response was:', raw);
+        throw new Error('unparseable AI reply');
+      }
 
       // 2) Content duplicate — same date + amount (+ merchant) as a receipt already captured.
       const sig = receiptSig(parsed);
@@ -474,6 +488,7 @@
       if (sel && parsed.currency && CUR[parsed.currency]) sel.value = parsed.currency;
       recalc();
     } catch (e) {
+      console.error('Receipt reader failed:', e && e.message ? e.message : e);
       descInput.placeholder = 'Could not read it — please type the details in';
       setTimeout(() => { descInput.placeholder = prevPlaceholder; }, 4500);
     } finally {
