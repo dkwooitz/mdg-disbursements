@@ -338,7 +338,7 @@
       if (fp.sig && r.dataset.sig && r.dataset.sig === fp.sig) return true;
     }
     for (const c of claims) {
-      if (exceptId && c.id === exceptId) continue;
+      if (typeof editingId !== 'undefined' && editingId && c.id === editingId) continue;   // skip the claim being edited
       for (const it of (c.other || [])) {
         if (fp.hash && it.hash && it.hash === fp.hash) return true;
         if (fp.sig && it.sig && it.sig === fp.sig) return true;
