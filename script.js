@@ -338,6 +338,7 @@
       if (fp.sig && r.dataset.sig && r.dataset.sig === fp.sig) return true;
     }
     for (const c of claims) {
+      if (c.status === 'Withdrawn') continue;   // a withdrawn claim no longer reserves its slips
       if (typeof editingId !== 'undefined' && editingId && c.id === editingId) continue;   // skip the claim being edited
       for (const it of (c.other || [])) {
         if (fp.hash && it.hash && it.hash === fp.hash) return true;
@@ -391,6 +392,7 @@
       const sig = kmSig(r);
       if (!sig) continue;
       for (const c of claims) {
+        if (c.status === 'Withdrawn') continue;   // withdrawn claims don't flag new travel
         if (exceptId && c.id === exceptId) continue;
         for (const it of (c.km || [])) {
           if (kmSig(it) === sig) return true;
@@ -417,6 +419,7 @@
     const inOrder = claims.slice().sort((a, b) => new Date(a.submitted) - new Date(b.submitted));
     const seen = [];
     for (const c of inOrder) {
+      if (c.status === 'Withdrawn') { c.kmFlagged = false; continue; }   // ignore withdrawn claims entirely
       c.kmFlagged = kmMatchesList(c.km, seen);
       seen.push(c);
     }
@@ -813,7 +816,7 @@
     } else {
       // Whole-disbursement duplicate check
       const sig = claimSig(data);
-      const dup = claims.find(c => claimSig(c) === sig);
+      const dup = claims.find(c => c.status !== 'Withdrawn' && claimSig(c) === sig);
       if (dup) {
         submitMsg.textContent = 'This disbursement is identical to ' + dup.ref + ', which has already been submitted. Duplicate submissions are not allowed.';
         submitMsg.className = 'submit-msg err';
