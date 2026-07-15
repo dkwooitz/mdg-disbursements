@@ -2095,7 +2095,20 @@
   }
 
   // The rows in scope for the level we're currently looking at.
+  // The rows that COUNT toward the money view. Withdrawn claims are cancelled, so
+  // they're excluded from every total, slice, and CSV export. (They're still shown,
+  // greyed, in the claims list at the deepest level — see dashScopeForList.)
   function dashScope() {
+    let rows = dashRecords.filter(r => dashInRange(r) && r.status !== 'Withdrawn');
+    if (dashLevel >= 1) rows = rows.filter(r => r.site === dashSite);
+    if (dashLevel >= 2) rows = rows.filter(r => r.machine === dashMachine);
+    if (dashLevel >= 3) rows = rows.filter(r => r.employee === dashEmployee);
+    return rows;
+  }
+
+  // Same scope, but INCLUDING withdrawn claims — used only for the claims list, so an
+  // auditor can still see a withdrawn claim on record even though it counts for nothing.
+  function dashScopeForList() {
     let rows = dashRecords.filter(dashInRange);
     if (dashLevel >= 1) rows = rows.filter(r => r.site === dashSite);
     if (dashLevel >= 2) rows = rows.filter(r => r.machine === dashMachine);
@@ -2154,7 +2167,7 @@
       hint.textContent = 'Every claim ' + dashEmployee + ' submitted here. Open one to see the full detail and banking.';
       claimsCard.style.display = '';
       document.getElementById('dClaimsTitle').textContent = 'Claims by ' + dashEmployee;
-      renderDashClaims(rows);
+      renderDashClaims(dashScopeForList());   // list includes withdrawn (greyed); totals above exclude them
       if (dashChart) { dashChart.destroy(); dashChart = null; }
       return;
     }
@@ -2222,7 +2235,8 @@
       const items = [];
       (r.km || []).forEach(k => items.push('Travel: ' + (k.from || '?') + ' → ' + (k.to || '?') + ' (' + (k.km || 0) + ' km)'));
       (r.other || []).forEach(o => items.push((o.desc || 'Other') + ' — ' + (o.currency || 'ZAR') + ' ' + (o.amount != null ? (+o.amount).toFixed(2) : '')));
-      return '<div class="dash-claim">' +
+      const withdrawn = r.status === 'Withdrawn';
+      return '<div class="dash-claim"' + (withdrawn ? ' style="opacity:.55;"' : '') + '>' +
         '<div class="dash-claim-head"><strong>' + dashEsc(r.ref) + '</strong>' +
         '<span>' + fmtDate(r.date) + '</span>' +
         '<span>' + dashEsc(r.status) + '</span>' +
