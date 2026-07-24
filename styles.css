@@ -268,6 +268,20 @@
   .combo-empty { padding: 10px 12px; font-size: 12.5px; color: var(--text-dim); }
   .field-hint { margin: 7px 0 0; font-size: 11.5px; color: var(--text-dim); line-height: 1.4; }
 
+  /* Locked (login-supplied) fields */
+  .locked-note {
+    display: flex; align-items: center;
+    font-size: 11.5px; color: var(--text-dim);
+    margin: -8px 0 20px; line-height: 1.4;
+  }
+  .field input.locked {
+    background: var(--row-head);
+    color: var(--text-dim);
+    cursor: not-allowed;
+  }
+  .field input.locked:focus { border-color: var(--border); box-shadow: none; }
+  .bank-type-field { max-width: 380px; margin-bottom: 20px; }
+
   /* Tabs */
   .tabs { display: flex; gap: 6px; margin-bottom: 18px; border-bottom: 1px solid var(--border); }
   .tab {

@@ -78,7 +78,6 @@
             <div class="avatar">DK</div>
             <div class="user-text">
               <div class="user-name">Diedrik Kwooitz</div>
-              <div class="user-handle">DIEDRIKKWOOITZ</div>
             </div>
             <svg class="caret" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
@@ -119,22 +118,26 @@
       <!-- Requestor -->
       <section class="card">
         <h2 class="card-title">Requestor</h2>
+        <p class="locked-note">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px;"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+          Your details are taken from your login and cannot be changed — claims may only be submitted for yourself.
+        </p>
         <div class="grid-2">
           <div class="field">
             <label>Name<span class="req">*</span></label>
-            <input type="text" id="empName" data-required placeholder="First name" />
+            <input type="text" id="empName" data-required readonly class="locked" />
           </div>
           <div class="field">
             <label>Surname<span class="req">*</span></label>
-            <input type="text" id="empSurname" data-required placeholder="Surname" />
+            <input type="text" id="empSurname" data-required readonly class="locked" />
           </div>
           <div class="field">
             <label>Employee number<span class="req">*</span></label>
-            <input type="text" id="empNumber" data-required placeholder="e.g. 10234" />
+            <input type="text" id="empNumber" data-required readonly class="locked" />
           </div>
           <div class="field">
             <label>Email<span class="req">*</span></label>
-            <input type="email" id="empEmail" data-required placeholder="name@masterdrilling.com" />
+            <input type="email" id="empEmail" data-required readonly class="locked" />
           </div>
           <div class="field">
             <label>Site<span class="req">*</span></label>
@@ -160,6 +163,14 @@
         <div class="ai-hint">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6z"/><path d="M18 14l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/></svg>
           <span>Upload your bank confirmation letter and it'll fill in the account holder, bank and account number for you. Please check every digit is correct before submitting.</span>
+        </div>
+        <div class="field bank-type-field">
+          <label>Which account should this be paid into?<span class="req">*</span></label>
+          <select id="bankType">
+            <option value="main" selected>Main banking details</option>
+            <option value="other">Other banking details</option>
+          </select>
+          <p class="field-hint" id="bankTypeHint">Your main banking details are saved and will be filled in automatically next time you log in.</p>
         </div>
         <div class="grid-2">
           <div class="field">

@@ -1,5 +1,36 @@
   const money = new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', currencyDisplay: 'narrowSymbol' });
 
+  /* ===== Signed-in user =====
+     These details fill the Requestor section and are locked, so a claim can only ever be
+     submitted for the person logged in. Until sign-in and the organogram/workforce lookup
+     are connected, this object stands in for the logged-in profile — replace it with the
+     values returned by the directory once that integration is in place. */
+  const SESSION_USER = {
+    name: 'Diedrik',
+    surname: 'Kwooitz',
+    number: '10234',                        // placeholder — set to the real employee number
+    email: 'DKwooitz@masterdrilling.com'
+  };
+
+  function applySessionUser() {
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+    set('empName', SESSION_USER.name);
+    set('empSurname', SESSION_USER.surname);
+    set('empNumber', SESSION_USER.number);
+    set('empEmail', SESSION_USER.email);
+
+    const full = [SESSION_USER.name, SESSION_USER.surname].filter(Boolean).join(' ');
+    const initials = (SESSION_USER.name || ' ')[0] + (SESSION_USER.surname || ' ')[0];
+    const nameEl = document.querySelector('.user-name');
+    const avatarEl = document.querySelector('.avatar');
+    const accName = document.querySelector('.account-name');
+    const accEmail = document.querySelector('.account-email');
+    if (nameEl) nameEl.textContent = full;
+    if (avatarEl) avatarEl.textContent = initials.toUpperCase();
+    if (accName) accName.textContent = full;
+    if (accEmail) accEmail.textContent = SESSION_USER.email;
+  }
+
   // Kilometre reimbursement rate (Rand per km). Editable by admins; not shown to requestors.
   let KM_RATE = 5.63;
 
@@ -625,6 +656,74 @@
   const bankProofInput = document.getElementById('bankProofInput');
   const bankProofBtn = document.getElementById('bankProofBtn');
 
+  /* ---- Main vs Other banking details ----
+     "Main" is remembered on this device between sessions; "Other" is used for a single
+     claim and is not stored. The AI letter reader works with whichever is selected. */
+  const bankTypeSel = document.getElementById('bankType');
+  const bankHolderEl = document.getElementById('bankHolder');
+  const bankNameEl = document.getElementById('bankName');
+  const bankAccEl = document.getElementById('bankAcc');
+  const bankTypeHint = document.getElementById('bankTypeHint');
+  const MAIN_BANK_KEY = 'mdg-bank-main';
+
+  let bankOther = { holder: '', bank: '', acc: '', proofName: '' };
+  let currentBankType = 'main';
+
+  function readBankFields() {
+    return {
+      holder: bankHolderEl.value.trim(),
+      bank: bankNameEl.value,
+      acc: bankAccEl.value.trim(),
+      proofName: (bankProofInput.files && bankProofInput.files[0]) ? bankProofInput.files[0].name
+                 : (bankProofBtn.classList.contains('has-file') ? (bankProofBtn.querySelector('.pf-label') || {}).textContent || '' : '')
+    };
+  }
+  function writeBankFields(d) {
+    bankHolderEl.value = d.holder || '';
+    bankNameEl.value = d.bank || '';
+    bankAccEl.value = d.acc || '';
+    bankProofInput.value = '';
+    bankProofBtn.classList.remove('field-error', 'busy');
+    if (d.proofName) {
+      bankProofBtn.classList.add('has-file');
+      bankProofBtn.innerHTML = uploadSvg + '<span class="pf-label">' + escapeHtml(d.proofName) + '</span>';
+    } else {
+      bankProofBtn.classList.remove('has-file');
+      bankProofBtn.innerHTML = uploadSvg + '<span class="pf-label">Upload bank confirmation letter</span>';
+    }
+    [bankHolderEl, bankNameEl, bankAccEl].forEach(el => el.classList.remove('field-error'));
+  }
+  function loadMainBank() {
+    try { return JSON.parse(localStorage.getItem(MAIN_BANK_KEY) || 'null') || { holder: '', bank: '', acc: '', proofName: '' }; }
+    catch (e) { return { holder: '', bank: '', acc: '', proofName: '' }; }
+  }
+  function saveMainBank() {
+    if (currentBankType !== 'main') return;
+    try { localStorage.setItem(MAIN_BANK_KEY, JSON.stringify(readBankFields())); } catch (e) {}
+  }
+  function updateBankHint() {
+    if (!bankTypeHint) return;
+    bankTypeHint.innerHTML = currentBankType === 'main'
+      ? 'Your main banking details are saved and will be filled in automatically next time you log in.'
+      : 'These details are used for <strong>this claim only</strong> and will not be saved. Your main details stay as they are.';
+  }
+
+  if (bankTypeSel) {
+    bankTypeSel.addEventListener('change', () => {
+      // stash what's on screen under the type we're leaving
+      if (currentBankType === 'main') saveMainBank(); else bankOther = readBankFields();
+      currentBankType = bankTypeSel.value;
+      writeBankFields(currentBankType === 'main' ? loadMainBank() : bankOther);
+      updateBankHint();
+    });
+  }
+  // Keep the main profile up to date as it's typed
+  [bankHolderEl, bankNameEl, bankAccEl].forEach(el => {
+    if (!el) return;
+    el.addEventListener('input', saveMainBank);
+    el.addEventListener('change', saveMainBank);
+  });
+
   bankProofBtn.addEventListener('click', () => bankProofInput.click());
   bankProofInput.addEventListener('change', () => {
     const f = bankProofInput.files[0];
@@ -677,6 +776,8 @@
       }
       if (parsed.accountNumber) acc.value = String(parsed.accountNumber);
       [holder, bank, acc].forEach(el => { if (el.value) el.classList.remove('field-error'); });
+      // Remember the newly-read details if these are the employee's main account.
+      if (currentBankType === 'main') saveMainBank(); else bankOther = readBankFields();
     } catch (e) {
       /* leave fields for manual entry */
     } finally {
@@ -703,7 +804,9 @@
       el.classList.toggle('field-error', !ok);
       if (!ok) missing++;
     });
-    const proofOk = (bankProofInput.files && bankProofInput.files.length > 0) || (editingRef && editingProofName);
+    const proofOk = (bankProofInput.files && bankProofInput.files.length > 0)
+      || bankProofBtn.classList.contains('has-file')
+      || (editingRef && editingProofName);
     bankProofBtn.classList.toggle('field-error', !proofOk);
     if (!proofOk) missing++;
 
@@ -859,16 +962,17 @@
   }
 
   function populateForm(c) {
-    setVal('empName', c.employee.name);
-    setVal('empSurname', c.employee.surname);
-    setVal('empNumber', c.employee.number);
-    setVal('empEmail', c.employee.email);
+    // Identity always comes from the signed-in user, never from the stored claim.
+    applySessionUser();
     setVal('empSite', c.employee.site);
     setVal('empMachine', c.employee.machine);
     setVal('carReg', c.employee.carReg);
     setVal('bankHolder', c.banking.holder);
     setVal('bankName', c.banking.bank);
     setVal('bankAcc', c.banking.acc);
+    currentBankType = c.banking.type === 'other' ? 'other' : 'main';
+    if (bankTypeSel) bankTypeSel.value = currentBankType;
+    updateBankHint();
 
     // Show the previously-attached proof (the file itself can't be restored, but it still counts).
     bankProofBtn.classList.remove('field-error', 'busy');
@@ -971,7 +1075,8 @@
       },
       banking: {
         holder: val('bankHolder'), bank: val('bankName'), acc: val('bankAcc'),
-        proofName: proofFile ? proofFile.name : ''
+        type: currentBankType,
+        proofName: proofFile ? proofFile.name : (readBankFields().proofName || '')
       },
       km, other, kmTotal, otherTotal, grandTotal: kmTotal + otherTotal
     };
@@ -980,10 +1085,13 @@
   function resetForm() {
     kmBody.innerHTML = ''; addRow('km'); addRow('km');
     otherBody.innerHTML = ''; addRow('other'); addRow('other');
-    ['bankHolder', 'bankName', 'bankAcc', 'carReg'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-    bankProofInput.value = '';
-    bankProofBtn.classList.remove('has-file', 'field-error', 'busy');
-    bankProofBtn.innerHTML = uploadSvg + '<span class="pf-label">Upload bank confirmation letter</span>';
+    const carReg = document.getElementById('carReg'); if (carReg) carReg.value = '';
+    // Return to the saved main banking profile for the next claim.
+    currentBankType = 'main';
+    if (bankTypeSel) bankTypeSel.value = 'main';
+    bankOther = { holder: '', bank: '', acc: '', proofName: '' };
+    writeBankFields(loadMainBank());
+    updateBankHint();
     recalc();
   }
 
@@ -1384,6 +1492,9 @@
 
   // load any saved admin config, then build the dependent UI
   loadConfig();
+  applySessionUser();
+  writeBankFields(loadMainBank());
+  updateBankHint();
   initSiteCombo();
   renderContacts();
   renderAdminContacts();
