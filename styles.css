@@ -668,6 +668,18 @@
     border-radius: 8px; padding: 13px 16px; margin: 0 0 22px !important;
   }
   .policy-actions { margin: 0 0 20px; }
+  .policy-meta {
+    display: flex; flex-wrap: wrap; gap: 8px 22px;
+    padding-bottom: 16px; margin-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px; color: var(--text-dim);
+  }
+  .policy-meta b { color: var(--text); font-weight: 600; }
+  .policy-approval {
+    margin-top: 26px !important; padding-top: 16px;
+    border-top: 1px solid var(--border);
+    font-size: 11.5px; font-style: italic;
+  }
 
   /* Policy Q&A */
   .policy-ask { display: flex; gap: 10px; flex-wrap: wrap; }
