@@ -353,6 +353,18 @@
     return t;
   }
 
+  // Contact list rendered for the assistant's fallback (uses the admin-editable contacts).
+  function contactsHtml() {
+    return '<ul class="answer-contacts">' + CONTACTS.map(c =>
+      '<li>' + escapeHtml(c.name) + (c.role ? ' (' + escapeHtml(c.role) + ')' : '') +
+      ' <a href="mailto:' + escapeHtml(c.email) + '">' + escapeHtml(c.email) + '</a></li>'
+    ).join('') + '</ul>';
+  }
+  function noAnswerHtml() {
+    return '<p>Unfortunately your query is not supported by the disbursement policy. ' +
+      'If you require further assistance, please contact:</p>' + contactsHtml();
+  }
+
   async function askPolicy() {
     const q = (policyQ.value || '').trim();
     if (!q) return;
@@ -366,14 +378,19 @@
         'Answer the employee\'s question using ONLY this policy. ' +
         'Reply with plain conversational text only — no JSON, no code fences, no markdown, no field names, no quotation marks around the answer. ' +
         'Be brief, clear and practical: two or three sentences. ' +
-        'If the policy does not cover the question, say so plainly and suggest they contact the Finance department. ' +
+        'If the policy does not contain the answer, or the question is unrelated to disbursements, ' +
+        'reply with exactly this single word and nothing else: NO_ANSWER. ' +
         'Do not invent rules, dates or amounts.\n\nEmployee question: ' + q;
       const answer = plainAnswer(await callAIProxy(toBase64Utf8(getPolicyText()), 'text/plain', prompt));
-      policyA.textContent = answer
-        ? answer
-        : 'No answer came back — please try rephrasing your question, or contact the Finance department.';
+
+      if (!answer || /^NO[_\s-]?ANSWER\.?$/i.test(answer.trim()) || /NO_ANSWER/i.test(answer)) {
+        policyA.innerHTML = noAnswerHtml();
+      } else {
+        policyA.textContent = answer;
+      }
     } catch (e) {
-      policyA.textContent = 'The policy assistant is unavailable right now. Please read the policy above, or contact the Finance department for help.';
+      policyA.innerHTML = '<p>The policy assistant is unavailable right now. ' +
+        'Please read the policy above, or contact:</p>' + contactsHtml();
     } finally {
       policyAskBtn.disabled = false;
     }
@@ -1178,6 +1195,14 @@
   let SITES = DEFAULT_SITES.slice();
   const CONFIG_VERSION = 2; // bump when the built-in site list changes so saved copies refresh
 
+  // HR contacts shown on the Policy page and used by the policy assistant's fallback.
+  const DEFAULT_CONTACTS = [
+    { name: 'Jean Du Toit', role: 'CHRO', email: 'JDuToit@masterdrilling.com' },
+    { name: 'Anneke Brink', role: 'HR Business Partner', email: 'AnnekeK@masterdrilling.com' },
+    { name: 'Angelina Lira', role: 'HR Business Partner', email: 'AngelinaL@masterdrilling.com' }
+  ];
+  let CONTACTS = DEFAULT_CONTACTS.map(c => Object.assign({}, c));
+
   function escapeHtml(s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
@@ -1189,11 +1214,41 @@
     if (cfg.version === CONFIG_VERSION && Array.isArray(cfg.sites)) SITES = cfg.sites.slice();
     else SITES = DEFAULT_SITES.slice();
     if (Array.isArray(cfg.machines) && cfg.machines.length) { MACHINES.length = 0; cfg.machines.forEach(m => MACHINES.push(m)); }
+    if (Array.isArray(cfg.contacts) && cfg.contacts.length) CONTACTS = cfg.contacts.map(c => Object.assign({}, c));
     if (typeof cfg.kmRate === 'number' && cfg.kmRate > 0) KM_RATE = cfg.kmRate;
     saveConfig(); // re-save under the current version
   }
   function saveConfig() {
-    try { localStorage.setItem('mdg-config', JSON.stringify({ version: CONFIG_VERSION, sites: SITES, machines: MACHINES, kmRate: KM_RATE })); } catch (e) {}
+    try { localStorage.setItem('mdg-config', JSON.stringify({ version: CONFIG_VERSION, sites: SITES, machines: MACHINES, contacts: CONTACTS, kmRate: KM_RATE })); } catch (e) {}
+  }
+
+  // Render the contacts shown on the Policy page.
+  function renderContacts() {
+    const box = document.getElementById('contactsList');
+    if (!box) return;
+    box.innerHTML = CONTACTS.length
+      ? CONTACTS.map(c =>
+          '<div class="contact-item">' +
+            '<span class="contact-name">' + escapeHtml(c.name) + '</span>' +
+            (c.role ? '<span class="contact-role">' + escapeHtml(c.role) + '</span>' : '') +
+            '<a class="contact-email" href="mailto:' + escapeHtml(c.email) + '">' + escapeHtml(c.email) + '</a>' +
+          '</div>').join('')
+      : '<div class="admin-empty">No contacts listed.</div>';
+  }
+
+  function renderAdminContacts() {
+    const box = document.getElementById('adminContacts');
+    if (!box) return;
+    box.innerHTML = CONTACTS.length
+      ? CONTACTS.map((c, i) =>
+          '<div class="admin-item"><span>' + escapeHtml(c.name) +
+          (c.role ? ' <span class="contact-role">' + escapeHtml(c.role) + '</span>' : '') +
+          ' <span class="contact-dim">' + escapeHtml(c.email) + '</span></span>' +
+          '<button class="admin-del" data-i="' + i + '" title="Remove">&times;</button></div>').join('')
+      : '<div class="admin-empty">No contacts yet — add one below.</div>';
+    box.querySelectorAll('.admin-del').forEach(b => b.addEventListener('click', () => {
+      CONTACTS.splice(+b.dataset.i, 1); saveConfig(); renderAdminContacts(); renderContacts();
+    }));
   }
 
   // Type-ahead combobox for Site, constrained to the SITES list (admin-editable).
@@ -1300,6 +1355,20 @@
     const filter = document.getElementById('machineFilter');
     if (filter) filter.addEventListener('input', () => renderAdminMachines(filter.value));
 
+    const addContactBtn = document.getElementById('addContact');
+    if (addContactBtn) addContactBtn.addEventListener('click', () => {
+      const nameEl = document.getElementById('newContactName');
+      const roleEl = document.getElementById('newContactRole');
+      const emailEl = document.getElementById('newContactEmail');
+      const name = nameEl.value.trim(), role = roleEl.value.trim(), email = emailEl.value.trim();
+      if (!name || !email) { adminFlash('A contact needs at least a name and an email address.', true); return; }
+      if (CONTACTS.some(c => c.email.toLowerCase() === email.toLowerCase())) { adminFlash(email + ' is already listed.', true); return; }
+      CONTACTS.push({ name: name, role: role, email: email });
+      saveConfig(); renderAdminContacts(); renderContacts();
+      nameEl.value = ''; roleEl.value = ''; emailEl.value = ''; nameEl.focus();
+      adminFlash('Contact added.', false);
+    });
+
     const saveRateBtn = document.getElementById('saveRate');
     if (saveRateBtn) saveRateBtn.addEventListener('click', () => {
       const v = parseFloat(document.getElementById('kmRateInput').value);
@@ -1316,6 +1385,8 @@
   // load any saved admin config, then build the dependent UI
   loadConfig();
   initSiteCombo();
+  renderContacts();
+  renderAdminContacts();
   renderAdminSites();
   renderAdminMachines('');
   const kmRateInput = document.getElementById('kmRateInput');

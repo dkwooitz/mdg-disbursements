@@ -297,7 +297,19 @@
       <!-- ===== Admin ===== -->
       <div class="view hidden" id="view-admin">
         <h1 class="page-title">Admin</h1>
-        <p class="page-sub">Manage sites, machines and the kilometre rate. Access will be restricted to authorised users.</p>
+        <p class="page-sub">Manage sites, machines, contacts and the kilometre rate. Access will be restricted to authorised users.</p>
+
+        <section class="card">
+          <h2 class="card-title">Contacts</h2>
+          <p class="admin-note">People shown on the Policy page and offered by the policy assistant when a question isn't covered. Update these when roles change.</p>
+          <div class="admin-list" id="adminContacts"></div>
+          <div class="admin-add admin-add-contact">
+            <input type="text" id="newContactName" placeholder="Name" />
+            <input type="text" id="newContactRole" placeholder="Role (e.g. HR Business Partner)" />
+            <input type="email" id="newContactEmail" placeholder="Email" />
+            <button class="btn btn-primary" id="addContact">Add contact</button>
+          </div>
+        </section>
 
         <section class="card">
           <h2 class="card-title">Sites</h2>
@@ -399,6 +411,12 @@
 
           <p class="policy-approval">Reviewed by Juan du Toit (Group Human Resource Officer) · Approved by André van Deventer (Chief Financial Officer)</p>
         </section>
+        <section class="card policy" id="policyContacts">
+          <h2 class="card-title">Who to contact</h2>
+          <p class="admin-note">For any query this policy does not cover, please contact one of the following:</p>
+          <div id="contactsList"></div>
+        </section>
+
         <section class="card policy" id="financeReq">
           <h2 class="card-title">Requirements from Finance</h2>
 
