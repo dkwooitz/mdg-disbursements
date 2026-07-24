@@ -667,6 +667,7 @@
     background: var(--field); border-left: 3px solid var(--accent);
     border-radius: 8px; padding: 13px 16px; margin: 0 0 22px !important;
   }
+  .policy-actions { margin: 0 0 20px; }
 
   /* Policy Q&A */
   .policy-ask { display: flex; gap: 10px; flex-wrap: wrap; }
