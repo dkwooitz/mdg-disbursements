@@ -660,6 +660,29 @@
   .policy h3 { font-size: 15px; margin: 22px 0 6px; color: var(--text); }
   .policy h3:first-child { margin-top: 0; }
   .policy p { margin: 0; color: var(--text-dim); }
+  .policy strong { color: var(--text); }
+  .policy-list { margin: 8px 0 0; padding-left: 22px; color: var(--text-dim); }
+  .policy-list li { margin: 4px 0; }
+  .policy-intro {
+    background: var(--field); border-left: 3px solid var(--accent);
+    border-radius: 8px; padding: 13px 16px; margin: 0 0 22px !important;
+  }
+
+  /* Policy Q&A */
+  .policy-ask { display: flex; gap: 10px; flex-wrap: wrap; }
+  .policy-ask input {
+    flex: 1; min-width: 200px;
+    background: var(--field); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); padding: 11px 13px; font-size: 14px; font-family: inherit;
+  }
+  .policy-ask input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .policy-answer {
+    margin-top: 16px; padding: 14px 16px;
+    background: var(--field); border: 1px solid var(--border);
+    border-left: 3px solid var(--accent); border-radius: 8px;
+    font-size: 13.5px; line-height: 1.55; white-space: pre-wrap;
+  }
+  .policy-answer.hidden { display: none; }
 
   .proto-note {
     margin-top: 26px; font-size: 12px; color: var(--text-dim);

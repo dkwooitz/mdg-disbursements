@@ -119,20 +119,26 @@
     card.addEventListener('click', () => applyTheme(card.dataset.themeVal))
   );
 
+  // Presentation poster shown by Logout (temporary — revert after the presentation).
+  const posterOverlay = document.getElementById('posterOverlay');
+  function showPoster() {
+    if (posterOverlay) posterOverlay.classList.remove('hidden');
+    if (accountMenu) { accountMenu.classList.add('hidden'); accountBtn.setAttribute('aria-expanded', 'false'); }
+  }
+  function hidePoster() { if (posterOverlay) posterOverlay.classList.add('hidden'); }
+  const posterBack = document.getElementById('posterBack');
+  if (posterBack) posterBack.addEventListener('click', hidePoster);
+
   // Settings page: session actions
   const setHubBtn = document.getElementById('setHub');
   if (setHubBtn) setHubBtn.addEventListener('click', () =>
     showToast('“Back to Hub” will link to the Master Drilling hub once it’s connected.', 5000));
   const setLogoutBtn = document.getElementById('setLogout');
-  if (setLogoutBtn) setLogoutBtn.addEventListener('click', function () {
-    if (window.mdgAuth) window.mdgAuth.signOut();
-  });
+  if (setLogoutBtn) setLogoutBtn.addEventListener('click', showPoster);
 
-  // Account-menu logout signs the user out
+  // Account-menu logout also shows the poster
   const menuLogout = document.querySelector('.btn-logout');
-  if (menuLogout) menuLogout.addEventListener('click', function () {
-    if (window.mdgAuth) window.mdgAuth.signOut();
-  });
+  if (menuLogout) menuLogout.addEventListener('click', showPoster);
 
   /* ---- Sidebar show/hide ---- */
   const appEl = document.querySelector('.app');
@@ -254,7 +260,7 @@
       const texts = tr.querySelectorAll('input[type=text]');
       rows.push({ from: texts[0] ? texts[0].value : '', to: texts[1] ? texts[1].value : '', km: tr.querySelector('.km-input').value });
     });
-    const flagged = kmMatchesPrevious(rows, typeof editingId !== 'undefined' ? editingId : null);
+    const flagged = kmMatchesPrevious(rows, typeof editingRef !== 'undefined' ? editingRef : null);
     const el = document.getElementById('kmFlag');
     if (el) el.classList.toggle('hidden', !flagged);
   }
@@ -308,6 +314,52 @@
     return (data && data.result) ? String(data.result) : '';
   }
 
+  /* ---- Policy Q&A: answers grounded in the policy shown on the Policy page ---- */
+  // UTF-8 safe base64 (btoa alone breaks on accented/dashed characters).
+  function toBase64Utf8(str) {
+    const bytes = new TextEncoder().encode(str);
+    let bin = '';
+    bytes.forEach(b => { bin += String.fromCharCode(b); });
+    return btoa(bin);
+  }
+  // Read the policy straight off the page, so the AI always answers from the current wording.
+  function getPolicyText() {
+    return Array.from(document.querySelectorAll('#view-manual .policy'))
+      .map(sec => sec.innerText.trim())
+      .join('\n\n');
+  }
+
+  const policyQ = document.getElementById('policyQ');
+  const policyAskBtn = document.getElementById('policyAskBtn');
+  const policyA = document.getElementById('policyA');
+
+  async function askPolicy() {
+    const q = (policyQ.value || '').trim();
+    if (!q) return;
+    policyA.classList.remove('hidden');
+    policyA.textContent = 'Checking the policy…';
+    policyAskBtn.disabled = true;
+
+    try {
+      const prompt =
+        'The attached text is Master Drilling\'s disbursement policy, including the "Requirements from Finance" section. ' +
+        'Answer the employee\'s question using ONLY this policy. Be brief, clear and practical — two or three sentences. ' +
+        'If the policy does not cover the question, say so plainly and suggest they contact the Finance department. ' +
+        'Do not invent rules, dates or amounts.\n\nEmployee question: ' + q;
+      const answer = await callAIProxy(toBase64Utf8(getPolicyText()), 'text/plain', prompt);
+      policyA.textContent = answer && answer.trim()
+        ? answer.trim()
+        : 'No answer came back — please try rephrasing your question, or contact the Finance department.';
+    } catch (e) {
+      policyA.textContent = 'The policy assistant is unavailable right now. Please read the policy above, or contact the Finance department for help.';
+    } finally {
+      policyAskBtn.disabled = false;
+    }
+  }
+
+  if (policyAskBtn) policyAskBtn.addEventListener('click', askPolicy);
+  if (policyQ) policyQ.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); askPolicy(); } });
+
   /* ---- Duplicate detection helpers ---- */
   // Fast, dependency-free hash of the file's base64 (identifies the exact same image).
   function cyrb53(str, seed) {
@@ -338,8 +390,7 @@
       if (fp.sig && r.dataset.sig && r.dataset.sig === fp.sig) return true;
     }
     for (const c of claims) {
-      if (c.status === 'Withdrawn') continue;   // a withdrawn claim no longer reserves its slips
-      if (typeof editingId !== 'undefined' && editingId && c.id === editingId) continue;   // skip the claim being edited
+      if (editingRef && c.ref === editingRef) continue;
       for (const it of (c.other || [])) {
         if (fp.hash && it.hash && it.hash === fp.hash) return true;
         if (fp.sig && it.sig && it.sig === fp.sig) return true;
@@ -355,24 +406,6 @@
     showToast(msg, 6500);
   }
   // Signature of a whole disbursement (employee + all line items + total) to catch re-submissions.
-  // A claim is "late" if it was SUBMITTED more than 90 days after an expense date
-  // (policy 5.4: 90 calendar days from the transaction date to disburse). This covers
-  // BOTH travelling rows and other-claim slips — the policy applies to any expense.
-  // Anchored to the submission date, so a claim that was compliant when submitted
-  // stays clean forever, even as the expense keeps ageing.
-  function isLateClaim(c) {
-    if (!c || !c.submitted) return false;
-    const sub = new Date(c.submitted);
-    if (isNaN(sub)) return false;
-    const rows = [].concat(Array.isArray(c.km) ? c.km : [], Array.isArray(c.other) ? c.other : []);
-    return rows.some(r => {
-      if (!r || !r.date) return false;
-      const d = new Date(r.date);
-      if (isNaN(d)) return false;
-      return (sub.getTime() - d.getTime()) / 86400000 > 90;
-    });
-  }
-
   function claimSig(d) {
     const km = (d.km || []).map(r => [r.date, r.from, r.to, r.km, (+r.amount).toFixed(2)].join(',')).sort().join(';');
     const oth = (d.other || []).map(r => [r.date, (r.desc || '').toLowerCase().trim(), r.currency, (+r.amount).toFixed(2)].join(',')).sort().join(';');
@@ -387,13 +420,12 @@
     return from + '|' + to + '|' + km;
   }
   // Does any travelling line here match the route + distance of a previous disbursement?
-  function kmMatchesPrevious(kmList, exceptId) {
+  function kmMatchesPrevious(kmList, exceptRef) {
     for (const r of (kmList || [])) {
       const sig = kmSig(r);
       if (!sig) continue;
       for (const c of claims) {
-        if (c.status === 'Withdrawn') continue;   // withdrawn claims don't flag new travel
-        if (exceptId && c.id === exceptId) continue;
+        if (exceptRef && c.ref === exceptRef) continue;
         for (const it of (c.km || [])) {
           if (kmSig(it) === sig) return true;
         }
@@ -419,7 +451,6 @@
     const inOrder = claims.slice().sort((a, b) => new Date(a.submitted) - new Date(b.submitted));
     const seen = [];
     for (const c of inOrder) {
-      if (c.status === 'Withdrawn') { c.kmFlagged = false; continue; }   // ignore withdrawn claims entirely
       c.kmFlagged = kmMatchesList(c.km, seen);
       seen.push(c);
     }
@@ -454,22 +485,8 @@
     try {
       const prompt = 'This is a receipt for an employee expense claim. Read it and respond with ONLY a JSON object — no markdown, no code fences, no commentary — in exactly this shape: {"date":"the purchase date as YYYY-MM-DD, or empty string if not visible","description":"a concise 2 to 5 word description of the purchase or merchant, suitable for an expense line","amount": the total amount paid as a plain number with no currency symbol or thousands separator, or 0 if not visible,"currency":"the three-letter ISO code of the currency on the receipt; must be one of ZAR, USD, EUR, AUD, BRL, PEN; use ZAR if you cannot tell"}.';
       const raw = await callAIProxy(b64, file.type || 'image/jpeg', prompt);
-      const clean = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
-      // The model should return pure JSON, but be forgiving: pull out the {...} block
-      // if it wrapped it in any stray text, and never let a bad reply throw silently.
-      let parsed = null;
-      if (clean) {
-        try {
-          parsed = JSON.parse(clean);
-        } catch (e1) {
-          const m = clean.match(/\{[\s\S]*\}/);
-          if (m) { try { parsed = JSON.parse(m[0]); } catch (e2) { /* fall through */ } }
-        }
-      }
-      if (!parsed) {
-        console.warn('Receipt reader: could not parse AI reply. Raw response was:', raw);
-        throw new Error('unparseable AI reply');
-      }
+      const clean = raw.replace(/```json/g, '').replace(/```/g, '').trim();
+      const parsed = JSON.parse(clean);
 
       // 2) Content duplicate — same date + amount (+ merchant) as a receipt already captured.
       const sig = receiptSig(parsed);
@@ -491,7 +508,6 @@
       if (sel && parsed.currency && CUR[parsed.currency]) sel.value = parsed.currency;
       recalc();
     } catch (e) {
-      console.error('Receipt reader failed:', e && e.message ? e.message : e);
       descInput.placeholder = 'Could not read it — please type the details in';
       setTimeout(() => { descInput.placeholder = prevPlaceholder; }, 4500);
     } finally {
@@ -506,7 +522,7 @@
   /* ---- Banking details: proof upload + AI reader ---- */
   const SA_BANKS = [
     'Absa Bank Limited', 'African Bank Limited', 'Bidvest Bank Limited', 'Capitec Bank Limited',
-    'Discovery Bank Limited', 'First National Bank', 'Investec Bank Limited', 'OM Bank Limited',
+    'Discovery Bank Limited', 'FirstRand Limited', 'Investec Bank Limited', 'OM Bank Limited',
     'Nedbank Limited', 'Sasfin Bank Limited', 'The Standard Bank of South Africa Limited', 'GoTyme Bank Limited'
   ];
   (function () {
@@ -580,56 +596,6 @@
     readBankLetter(f);
   });
 
-  // Common ways a bank names itself on a letter, mapped to our dropdown option.
-  // (An FNB letter, for example, usually says "First National Bank, a division of
-  // FirstRand Bank Limited" — so several spellings must land on the same option.)
-  const BANK_ALIASES = {
-    'fnb': 'First National Bank',
-    'firstrand': 'First National Bank',
-    'first national': 'First National Bank',
-    'absa': 'Absa Bank Limited',
-    'african bank': 'African Bank Limited',
-    'bidvest': 'Bidvest Bank Limited',
-    'capitec': 'Capitec Bank Limited',
-    'discovery': 'Discovery Bank Limited',
-    'investec': 'Investec Bank Limited',
-    'nedbank': 'Nedbank Limited',
-    'sasfin': 'Sasfin Bank Limited',
-    'standard bank': 'The Standard Bank of South Africa Limited',
-    'standard': 'The Standard Bank of South Africa Limited',
-    'gotyme': 'GoTyme Bank Limited',
-    'old mutual': 'OM Bank Limited',
-    'om bank': 'OM Bank Limited'
-  };
-
-  // Turn whatever the AI read into one of the dropdown's options.
-  function matchBankOption(selectEl, aiValue) {
-    if (!selectEl || !aiValue) return null;
-    const key = String(aiValue).toLowerCase().trim();
-    const opts = Array.from(selectEl.options).filter(o => o.value);
-
-    // 1. Exact match on an option.
-    let match = opts.find(o => o.value.toLowerCase() === key);
-    if (match) return match.value;
-
-    // 2. A known alias appearing anywhere in what the AI said.
-    for (const alias in BANK_ALIASES) {
-      if (key.includes(alias)) {
-        const target = BANK_ALIASES[alias];
-        if (opts.some(o => o.value === target)) return target;
-      }
-    }
-
-    // 3. An option's distinctive name appearing in the AI's answer (or vice versa).
-    match = opts.find(o => {
-      const name = o.value.toLowerCase()
-        .replace(/\b(bank|limited|ltd|of|south|africa|the|a|division)\b/g, ' ')
-        .replace(/\s+/g, ' ').trim();
-      return name && (key.includes(name) || name.includes(key));
-    });
-    return match ? match.value : null;
-  }
-
   async function readBankLetter(file) {
     const holder = document.getElementById('bankHolder');
     const bank   = document.getElementById('bankName');
@@ -664,14 +630,11 @@
       const parsed = JSON.parse(clean);
       if (parsed.accountHolder) holder.value = parsed.accountHolder;
       if (parsed.bank) {
-        const chosen = matchBankOption(bank, parsed.bank);
-        if (chosen) {
-          bank.value = chosen;
-        } else {
-          // Never silently drop what the AI read — surface it so it can be checked.
-          console.warn('Bank not matched to a dropdown option. AI returned:', parsed.bank);
-          showToast('Couldn’t match “' + parsed.bank + '” to a bank in the list — please select it.', 6000);
-        }
+        const opts = Array.from(bank.options);
+        const key = String(parsed.bank).toLowerCase();
+        let match = opts.find(o => o.value.toLowerCase() === key);
+        if (!match) match = opts.find(o => o.value && (o.value.toLowerCase().includes(key) || key.includes(o.value.toLowerCase().split(' ')[0])));
+        if (match) bank.value = match.value;
       }
       if (parsed.accountNumber) acc.value = String(parsed.accountNumber);
       [holder, bank, acc].forEach(el => { if (el.value) el.classList.remove('field-error'); });
@@ -693,120 +656,38 @@
   document.querySelectorAll('[data-required]').forEach(el =>
     el.addEventListener('input', () => el.classList.remove('field-error'))
   );
-  /* ---- Save draft ---- */
-  // A draft is saved without the full submit validation, so a half-finished claim
-  // is never lost. It stays editable and deletable until it is submitted.
-  const draftBtn = document.getElementById('draftBtn');
-  if (draftBtn) draftBtn.addEventListener('click', async () => {
-    const data = collectClaim();
-    saveProfileFields(data.employee.empNo, data.employee.dept);
-
-    if (editingId) {
-      const c = byId(editingId);
-      if (c) {
-        Object.assign(c, data, { id: c.id, ref: c.ref, submitted: c.submitted, status: 'Draft', stage: 0 });
-        await withSubmitBusy(() => uploadClaimProofs(c));
-        renderPrev(c.ref);
-        saveClaims();
-        endEdit();
-        resetForm();
-        showToast('Draft ' + c.ref + ' saved. You can keep editing it from Previous Claims.', 5000);
-        showView('previous');
-        return;
-      }
-    }
-
-    data.status = 'Draft';
-    data.stage = 0;
-    await withSubmitBusy(() => uploadClaimProofs(data));
-    claims.unshift(data);
-    renderPrev(data.ref);
-    saveClaims();
-    resetForm();
-    if (submitMsg) { submitMsg.textContent = ''; submitMsg.className = 'submit-msg'; }
-    showToast('Draft ' + data.ref + ' saved. You can finish it later from Previous Claims.', 5000);
-    showView('previous');
-  });
-
-  const FIELD_LABELS = {
-    empSite: 'Site', empMachine: 'Machine', empNo: 'Employee number', empDept: 'Department',
-    bankHolder: 'Name of account holder', bankName: 'Bank', bankAcc: 'Account number',
-    kmReason: 'Reason for travelling'
-  };
-
-  // True if any kilometres row has actual travel on it.
-  function hasKmRows() {
-    return Array.from(kmBody.querySelectorAll('tr')).some(tr => {
-      const dist = parseFloat(tr.querySelector('.km-input') && tr.querySelector('.km-input').value) || 0;
-      const texts = tr.querySelectorAll('input[type=text]');
-      return dist > 0 || (texts[0] && texts[0].value.trim()) || (texts[1] && texts[1].value.trim());
-    });
-  }
-
   const submitMsg = document.getElementById('submitMsg');
-  document.getElementById('submitBtn').addEventListener('click', async () => {
+  document.getElementById('submitBtn').addEventListener('click', () => {
     let missing = 0;
-    const missingNames = [];
-    let firstBad = null;
     document.querySelectorAll('[data-required]').forEach(el => {
       const ok = el.value && el.value.trim() !== '';
       el.classList.toggle('field-error', !ok);
-      if (!ok) {
-        missing++;
-        missingNames.push(FIELD_LABELS[el.id] || el.id);
-        if (!firstBad) firstBad = el;
-      }
+      if (!ok) missing++;
     });
-
-    // Reason for travelling is required ONLY when kilometres are being claimed.
-    const kmReasonEl = document.getElementById('kmReason');
-    const kmReasonNeeded = hasKmRows();
-    const kmReasonOk = !kmReasonNeeded || (kmReasonEl && kmReasonEl.value.trim() !== '');
-    if (kmReasonEl) kmReasonEl.classList.toggle('field-error', !kmReasonOk);
-    if (!kmReasonOk) {
-      missing++;
-      missingNames.push('Reason for travelling');
-      if (!firstBad) firstBad = kmReasonEl;
-    }
-
-    const bankSrcEl = document.getElementById('bankSource');
-    const usingMain = bankSrcEl && bankSrcEl.value === 'main' && mainBanking;
-    const proofOk = usingMain || (bankProofInput.files && bankProofInput.files.length > 0) || (editingId && editingProofName);
+    const proofOk = (bankProofInput.files && bankProofInput.files.length > 0) || (editingRef && editingProofName);
     bankProofBtn.classList.toggle('field-error', !proofOk);
-    if (!proofOk) { missing++; missingNames.push('Proof of account'); if (!firstBad) firstBad = bankProofBtn; }
+    if (!proofOk) missing++;
 
     if (missing > 0) {
-      submitMsg.textContent = 'Please complete: ' + missingNames.join(', ') + '.';
+      submitMsg.textContent = 'Please complete the required fields (marked *) and attach your proof of account before submitting.';
       submitMsg.className = 'submit-msg err';
-      if (firstBad && firstBad.scrollIntoView) firstBad.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
 
     const data = collectClaim();
-    saveProfileFields(data.employee.empNo, data.employee.dept);   // remember for next time
 
-    if (editingId) {
+    if (editingRef) {
       // Update the recalled claim in place, preserving its reference, date, status and progress.
-      const c = byId(editingId);
+      const c = claims.find(x => x.ref === editingRef);
       if (c) {
         c.employee = data.employee;
         c.banking = data.banking;
         if (!(bankProofInput.files && bankProofInput.files.length) && editingProofName) c.banking.proofName = editingProofName;
         c.km = data.km; c.other = data.other;
         c.kmTotal = data.kmTotal; c.otherTotal = data.otherTotal; c.grandTotal = data.grandTotal;
-        // Submitting a draft turns it into a real submission — and locks it.
-        const wasDraft = c.status === 'Draft';
-        if (wasDraft) {
-          c.status = 'Pending HOD';
-          c.stage = 1;
-          c.submitted = new Date();   // the 90-day check anchors to the real submission date
-        }
-        await withSubmitBusy(function () { return uploadClaimProofs(c); });
         recomputeKmFlags();
         renderPrev(c.ref);
-        submitMsg.textContent = wasDraft
-          ? 'Draft ' + c.ref + ' submitted to your HOD.'
-          : 'Claim ' + c.ref + ' updated. Its progress was kept.';
+        submitMsg.textContent = 'Claim ' + c.ref + ' updated. Its progress was kept.';
         submitMsg.className = 'submit-msg ok';
         saveClaims();
       }
@@ -816,14 +697,13 @@
     } else {
       // Whole-disbursement duplicate check
       const sig = claimSig(data);
-      const dup = claims.find(c => c.status !== 'Withdrawn' && claimSig(c) === sig);
+      const dup = claims.find(c => claimSig(c) === sig);
       if (dup) {
         submitMsg.textContent = 'This disbursement is identical to ' + dup.ref + ', which has already been submitted. Duplicate submissions are not allowed.';
         submitMsg.className = 'submit-msg err';
         return;
       }
       data.kmFlagged = kmMatchesPrevious(data.km, null);
-      await withSubmitBusy(function () { return uploadClaimProofs(data); });
       claims.unshift(data);
       renderPrev(data.ref);
       saveClaims();
@@ -839,135 +719,22 @@
   const claims = [];
   let refSeq = 43; // next reference number
 
-  // A stable unique id for each claim, so it maps to exactly one database row.
-  function newId() {
-    return (window.crypto && crypto.randomUUID)
-      ? crypto.randomUUID()
-      : 'id-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+  // Persist claim history on the device so duplicate checks and Previous Claims survive reloads.
+  // (Per-browser for now; the backend will make this permanent and shared.)
+  function saveClaims() {
+    try { localStorage.setItem('mdg-claims', JSON.stringify({ refSeq: refSeq, claims: claims })); } catch (e) {}
   }
-
-  // Claims live in the Supabase "disbursements" table. Row Level Security means a
-  // person's queries only ever touch their own rows — the isolation is enforced by
-  // the database, not by this code.
-  async function saveClaims() {
-    const sb   = window.mdgAuth && window.mdgAuth.client;
-    const user = window.mdgAuth && window.mdgAuth.user;
-    if (!sb || !user) return;                       // not signed in yet
-    // Safety net: only ever write rows this user owns. If a claim without an owner
-    // (or someone else's) ever reached this list, writing it would be rejected by the
-    // database and take the whole save down with it — losing the real claim.
-    const mine = claims.filter(c => !c.owner_id || c.owner_id === user.id);
-    const rows = mine.map(c => ({
-      id: c.id,
-      owner_id: user.id,                            // stamps the claim with its owner
-      ref: c.ref,
-      status: c.status,
-      amount: (typeof c.grandTotal === 'number') ? c.grandTotal : null,
-      data: c                                       // the whole claim, stored as JSON
-    }));
-    if (!rows.length) return;
-    const { error } = await sb.from('disbursements').upsert(rows, { onConflict: 'id' });
-    if (error) {
-      console.error('Could not save claims:', error.message);
-      showToast('Your claim could not be saved: ' + error.message, 8000);
-    }
-  }
-
-  async function loadClaims() {
-    const sb = window.mdgAuth && window.mdgAuth.client;
-    const user = window.mdgAuth && window.mdgAuth.user;
-    if (!sb || !user) return;
-    // Previous Claims is strictly the signed-in person's own claims. This filter is
-    // essential: an admin's RLS policy lets them READ everyone's rows, so without
-    // it an admin would see (and try to re-save) other people's claims here.
-    // Company-wide visibility belongs on the Dashboard, not in this list.
-    const { data, error } = await sb
-      .from('disbursements')
-      .select('data, created_at')
-      .eq('owner_id', user.id)
-      .order('created_at', { ascending: false });   // newest first
-    if (error) { console.error('Could not load claims:', error.message); return; }
-    claims.length = 0;
-    (data || []).forEach(row => { if (row && row.data) claims.push(row.data); });
-    // Continue reference numbering from this user's highest existing claim.
-    let maxSeq = 42;
-    claims.forEach(c => {
-      const m = /(\d+)\s*$/.exec(c.ref || '');
-      if (m) { const n = parseInt(m[1], 10); if (n > maxSeq) maxSeq = n; }
-    });
-    refSeq = maxSeq + 1;
-    // The old per-device history is no longer used; clear it so it can't cause confusion.
-    try { localStorage.removeItem('mdg-claims'); } catch (e) {}
-    recomputeKmFlags();
-    renderPrev();
-  }
-
-  async function deleteClaimRow(id) {
-    const sb = window.mdgAuth && window.mdgAuth.client;
-    if (!sb || !id) return;
-    const { error } = await sb.from('disbursements').delete().eq('id', id);
-    if (error) console.error('Could not delete claim:', error.message);
-  }
-
-  // Upload any newly-attached proof images to the private "claim-proofs" bucket and
-  // record each file's path on the claim. Rows with no new file keep their existing path.
-  async function uploadClaimProofs(claim) {
-    const sb   = window.mdgAuth && window.mdgAuth.client;
-    const user = window.mdgAuth && window.mdgAuth.user;
-    if (!sb || !user || !claim) return;
-    const base = user.id + '/' + claim.id + '/';
-    async function up(file, slot) {
-      if (!file) return null;                                   // nothing new attached
-      const safe = (file.name || 'file').replace(/[^\w.\-]+/g, '_');
-      const path = base + slot + '-' + safe;
-      const { error } = await sb.storage.from('claim-proofs')
-        .upload(path, file, { upsert: true, contentType: file.type || undefined });
-      if (error) { console.error('Proof upload failed:', error.message); return null; }
-      return path;
-    }
-    if (Array.isArray(claim.km)) {
-      for (let i = 0; i < claim.km.length; i++) {
-        const p = await up(claim.km[i]._file, 'km-' + i);
-        if (p) claim.km[i].proofPath = p;
-        delete claim.km[i]._file;                               // never store the File itself
-      }
-    }
-    if (Array.isArray(claim.other)) {
-      for (let i = 0; i < claim.other.length; i++) {
-        const p = await up(claim.other[i]._file, 'other-' + i);
-        if (p) claim.other[i].proofPath = p;
-        delete claim.other[i]._file;
-      }
-    }
-    if (claim.banking) {
-      const p = await up(claim.banking._file, 'bank');
-      if (p) claim.banking.proofPath = p;
-      delete claim.banking._file;
-    }
-  }
-
-  // Show a busy state on the submit button while proofs upload.
-  async function withSubmitBusy(fn) {
-    const btn = document.getElementById('submitBtn');
-    const prev = btn ? btn.textContent : '';
-    if (btn) { btn.disabled = true; btn.textContent = 'Uploading…'; }
-    try { await fn(); }
-    finally { if (btn) { btn.disabled = false; btn.textContent = prev; } }
+  function loadClaims() {
+    try {
+      const d = JSON.parse(localStorage.getItem('mdg-claims') || '{}');
+      if (Array.isArray(d.claims)) { claims.length = 0; d.claims.forEach(c => claims.push(c)); }
+      if (typeof d.refSeq === 'number') refSeq = d.refSeq;
+    } catch (e) {}
   }
 
   function fmtDate(d)     { return new Date(d).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }); }
   function fmtDateTime(d) { return new Date(d).toLocaleString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
-  // Look a claim up by its unique id. (A reference number is for humans and is NOT
-  // guaranteed unique — two claims can share one — so never identify a claim by ref.)
-  function byId(id) { return claims.find(x => x.id === id); }
-
-  function newRef() {
-    // Skip any reference already in use, so a collision can't produce two identical refs.
-    let ref;
-    do { ref = 'DSB-' + new Date().getFullYear() + '-' + String(refSeq++).padStart(4, '0'); }
-    while (claims.some(c => c.ref === ref));
-    return ref;
-  }
+  function newRef() { return 'DSB-' + new Date().getFullYear() + '-' + String(refSeq++).padStart(4, '0'); }
 
   function typeLabel(c) {
     const k = c.kmTotal > 0, o = c.otherTotal > 0;
@@ -977,11 +744,7 @@
     return '—';
   }
   function pillFor(status) {
-    const map = {
-      'Approved': 'pill-ok', 'Rejected': 'pill-no', 'Recalled': 'pill-recalled',
-      'Draft': 'pill-draft', 'Withdrawn': 'pill-withdrawn'
-    };
-    const cls = map[status] || 'pill-wait';
+    const cls = status === 'Approved' ? 'pill-ok' : (status === 'Rejected' ? 'pill-no' : (status === 'Recalled' ? 'pill-recalled' : 'pill-wait'));
     return '<span class="pill ' + cls + '">' + status + '</span>';
   }
 
@@ -993,7 +756,7 @@
     return '<div class="stepper"><div class="stepper-nodes">' + nodes + '</div></div>';
   }
 
-  function renderPrev(highlightId) {
+  function renderPrev(highlightRef) {
     const tb = document.getElementById('prevRows');
     if (!tb) return;
     const sorted = claims.slice().sort((a, b) => new Date(b.submitted) - new Date(a.submitted));
@@ -1004,35 +767,20 @@
     }
     sorted.forEach(c => {
       const tr = document.createElement('tr');
-      const isDraft = c.status === 'Draft';
-      const isWithdrawn = c.status === 'Withdrawn';
-      tr.className = 'claim-row' + (c.id === highlightId ? ' row-new' : '') + (isWithdrawn ? ' withdrawn' : '');
+      tr.className = 'claim-row' + (c.ref === highlightRef ? ' row-new' : '');
       const flagBadge = c.kmFlagged
         ? ' <span class="km-flag-badge" title="The kilometres and/or the route reflects a previous disbursement. Please ensure accuracy and integrity of disbursement.">!</span>'
         : '';
-      const lateBadge = isLateClaim(c)
-        ? ' <span title="Disbursement submitted 90 days after initial day of purchase. Falls outside policy terms." style="display:inline-block;background:#f5a623;color:#3a2c00;font-weight:700;border-radius:4px;padding:0 6px;font-size:12px;cursor:help;">&#9888;</span>'
-        : '';
-      // Actions depend on status:
-      //   Draft      → can be edited (Recall) and deleted
-      //   Submitted  → locked; can only be Withdrawn
-      //   Withdrawn  → read-only, kept in the list for the audit trail
-      let actions = '<button class="mini-btn" data-view="' + c.id + '">View</button> ' +
-                    '<button class="mini-btn" data-pdf="' + c.id + '">PDF</button>';
-      if (isDraft) {
-        actions += ' <button class="mini-btn" data-recall="' + c.id + '">Edit</button>' +
-                   ' <button class="mini-btn danger" data-delete="' + c.id + '">Delete</button>';
-      } else if (!isWithdrawn) {
-        actions += ' <button class="mini-btn danger" data-withdraw="' + c.id + '">Withdraw</button>';
-      }
-
       tr.innerHTML =
-        '<td class="ref">' + c.ref + flagBadge + lateBadge + '</td>' +
+        '<td class="ref">' + c.ref + flagBadge + '</td>' +
         '<td>' + fmtDate(c.submitted) + '</td>' +
         '<td>' + typeLabel(c) + '</td>' +
         '<td style="text-align:right">' + money.format(c.grandTotal) + '</td>' +
         '<td>' + pillFor(c.status) + '</td>' +
-        '<td style="text-align:right">' + actions + '</td>';
+        '<td style="text-align:right"><button class="mini-btn" data-view="' + c.ref + '">View</button> ' +
+          '<button class="mini-btn" data-pdf="' + c.ref + '">PDF</button> ' +
+          '<button class="mini-btn" data-recall="' + c.ref + '">Recall</button> ' +
+          '<button class="mini-btn danger" data-delete="' + c.ref + '">Delete</button></td>';
       tb.appendChild(tr);
 
       const pr = document.createElement('tr');
@@ -1040,30 +788,19 @@
       pr.innerHTML = '<td colspan="6">' + stepperHtml(typeof c.stage === 'number' ? c.stage : 1) + '</td>';
       tb.appendChild(pr);
     });
-    tb.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => openClaim(byId(b.dataset.view))));
-    tb.querySelectorAll('[data-pdf]').forEach(b => b.addEventListener('click', () => generatePDF(byId(b.dataset.pdf))));
+    tb.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => openClaim(claims.find(x => x.ref === b.dataset.view))));
+    tb.querySelectorAll('[data-pdf]').forEach(b => b.addEventListener('click', () => generatePDF(claims.find(x => x.ref === b.dataset.pdf))));
     tb.querySelectorAll('[data-recall]').forEach(b => b.addEventListener('click', () => recallClaim(b.dataset.recall)));
     tb.querySelectorAll('[data-delete]').forEach(b => b.addEventListener('click', () => deleteClaim(b.dataset.delete)));
-    tb.querySelectorAll('[data-withdraw]').forEach(b => b.addEventListener('click', () => withdrawClaim(b.dataset.withdraw)));
   }
 
   // ---- Recall: reopen a claim into New Claim for editing (progress is preserved) ----
-  let editingId = null;
+  let editingRef = null;
   let editingProofName = '';
-  let editingProofPath = '';
   const editBanner = document.getElementById('editBanner');
   const submitBtnEl = document.getElementById('submitBtn');
 
   function setVal(id, v) { const el = document.getElementById(id); if (el) el.value = v || ''; }
-
-  // Show a "proof already on file" marker on a recalled row's upload button.
-  function markRowProofOnFile(tr) {
-    const b = tr.querySelector('.odo-btn');
-    if (b) {
-      b.classList.add('has-photo');
-      b.innerHTML = '<span class="odo-ok" title="Proof on file">&#10003;</span>';
-    }
-  }
 
   function fillKmRow(tr, r) {
     tr.querySelector('input[type=date]').value = r.date || '';
@@ -1071,8 +808,6 @@
     if (texts[0]) texts[0].value = r.from || '';
     if (texts[1]) texts[1].value = r.to || '';
     tr.querySelector('.km-input').value = r.km || '';
-    tr.dataset.proofPath = r.proofPath || '';
-    if (r.proofPath) markRowProofOnFile(tr);
   }
   function fillOtherRow(tr, r) {
     tr.querySelector('input[type=date]').value = r.date || '';
@@ -1081,16 +816,11 @@
     tr.querySelector('.amt-input').value = (r.amount != null ? r.amount : '');
     if (r.hash) tr.dataset.fileHash = r.hash;
     if (r.sig) tr.dataset.sig = r.sig;
-    tr.dataset.proofPath = r.proofPath || '';
-    if (r.proofPath) markRowProofOnFile(tr);
   }
 
   function populateForm(c) {
     setVal('empName', c.employee.name);
     setVal('empEmail', c.employee.email);
-    setVal('empNo', c.employee.empNo || savedEmpNo || '');
-    setVal('empDept', c.employee.dept || savedDept || '');
-    setVal('kmReason', c.employee.kmReason || '');
     setVal('empSite', c.employee.site);
     setVal('empMachine', c.employee.machine);
     setVal('carReg', c.employee.carReg);
@@ -1116,18 +846,16 @@
     recalc();
   }
 
-  function startEdit(id, ref, proofName, proofPath) {
-    editingId = id;
+  function startEdit(ref, proofName) {
+    editingRef = ref;
     editingProofName = proofName || '';
-    editingProofPath = proofPath || '';
     document.getElementById('editRef').textContent = ref;
     if (editBanner) editBanner.classList.remove('hidden');
     if (submitBtnEl) submitBtnEl.textContent = 'Update claim';
   }
   function endEdit() {
-    editingId = null;
+    editingRef = null;
     editingProofName = '';
-    editingProofPath = '';
     if (editBanner) editBanner.classList.add('hidden');
     if (submitBtnEl) submitBtnEl.textContent = 'Submit to HOD';
   }
@@ -1138,60 +866,24 @@
     showView('previous');
   });
 
-  function recallClaim(id) {
-    const c = byId(id);
+  function recallClaim(ref) {
+    const c = claims.find(x => x.ref === ref);
     if (!c) return;
-    const ref = c.ref;
-    // Only a draft may be edited. Once submitted, a claim is locked.
-    if (c.status !== 'Draft') {
-      showToast('Submitted claims cannot be edited. Withdraw it instead.', 5000);
-      return;
-    }
     populateForm(c);
-    startEdit(c.id, ref, c.banking.proofName, c.banking.proofPath);
-    // Show the recalled claim's banking as editable "Other" details.
-    bankEditingMain = false;
-    const bankSrc = document.getElementById('bankSource');
-    if (bankSrc) bankSrc.value = 'other';
-    applyBankSource();
+    startEdit(ref, c.banking.proofName);
     if (submitMsg) { submitMsg.textContent = ''; submitMsg.className = 'submit-msg'; }
     showView('new');
     showToast('Disbursement ' + ref + ' reopened for editing. Its progress is unchanged.', 5000);
   }
 
-  // Withdrawing keeps the claim on record (greyed out) so the audit trail stays
-  // complete — unlike deleting, which is only ever allowed on an unsubmitted draft.
-  function withdrawClaim(id) {
-    const c = byId(id);
-    if (!c || c.status === 'Withdrawn' || c.status === 'Draft') return;
-    const ref = c.ref;
-    showConfirm('Withdraw disbursement ' + ref + '? It will no longer be actioned, but stays on record and cannot be edited or deleted.', () => {
-      c.status = 'Withdrawn';
-      c.withdrawnAt = new Date();
-      renderPrev();
-      saveClaims();
-      showToast('Disbursement ' + ref + ' withdrawn. It remains on record.', 5000);
-    }, 'Withdraw');
-  }
-
-  function deleteClaim(id) {
-    const c = byId(id);
-    if (!c) return;
-    const ref = c.ref;
-    // Only drafts may be deleted. A submitted claim must remain on record.
-    if (c.status !== 'Draft') {
-      showToast('Submitted claims cannot be deleted. Withdraw it instead — it stays on record.', 6000);
-      return;
-    }
-    showConfirm('Are you sure you want to delete this draft? Once deleted, it cannot be retrieved.', () => {
-      const i = claims.findIndex(x => x.id === id);
-      let removedId = null;
-      if (i >= 0) { removedId = claims[i].id; claims.splice(i, 1); }
-      if (editingId === id) { endEdit(); resetForm(); }
+  function deleteClaim(ref) {
+    showConfirm('Are you sure that you want to delete this submitted disbursement? Once deleted, it cannot be retrieved.', () => {
+      const i = claims.findIndex(x => x.ref === ref);
+      if (i >= 0) claims.splice(i, 1);
+      if (editingRef === ref) { endEdit(); resetForm(); }
       recomputeKmFlags();
       renderPrev();
       saveClaims();
-      if (removedId) deleteClaimRow(removedId);
       showToast('Disbursement ' + ref + ' deleted.', 4000);
     });
   }
@@ -1204,11 +896,9 @@
       const date = tr.querySelector('input[type=date]').value;
       const texts = tr.querySelectorAll('input[type=text]');
       const dist = parseFloat(tr.querySelector('.km-input').value) || 0;
-      const kmFile = (tr.querySelector('.odo-input') && tr.querySelector('.odo-input').files[0]) || null;
-      const kmPath = tr.dataset.proofPath || '';
-      const hasPhoto = !!(kmFile || kmPath || tr.querySelector('.odo-thumb'));
+      const hasPhoto = !!tr.querySelector('.odo-thumb');
       if (dist > 0 || date || (texts[0] && texts[0].value)) {
-        km.push({ date, from: texts[0] ? texts[0].value : '', to: texts[1] ? texts[1].value : '', km: dist, amount: dist * KM_RATE, hasPhoto, proofPath: kmPath, _file: kmFile });
+        km.push({ date, from: texts[0] ? texts[0].value : '', to: texts[1] ? texts[1].value : '', km: dist, amount: dist * KM_RATE, hasPhoto });
       }
     });
 
@@ -1218,11 +908,9 @@
       const desc = tr.querySelector('input[type=text]').value;
       const cur = tr.querySelector('.cur-select').value;
       const amt = parseFloat(tr.querySelector('.amt-input').value) || 0;
-      const otherFile = (tr.querySelector('.odo-input') && tr.querySelector('.odo-input').files[0]) || null;
-      const otherPath = tr.dataset.proofPath || '';
-      const hasProof = !!(otherFile || otherPath || tr.querySelector('.odo-thumb'));
+      const hasProof = !!tr.querySelector('.odo-thumb');
       if (amt > 0 || date || desc) {
-        other.push({ date, desc, currency: cur, amount: amt, rate: RATES[cur] || 1, zar: amt * (RATES[cur] || 1), hasProof, hash: tr.dataset.fileHash || '', sig: tr.dataset.sig || '', proofPath: otherPath, _file: otherFile });
+        other.push({ date, desc, currency: cur, amount: amt, rate: RATES[cur] || 1, zar: amt * (RATES[cur] || 1), hasProof, hash: tr.dataset.fileHash || '', sig: tr.dataset.sig || '' });
       }
     });
 
@@ -1231,63 +919,29 @@
     const proofFile = bankProofInput.files[0];
 
     return {
-      id: newId(),
       ref: newRef(),
       submitted: new Date(),
       status: 'Pending HOD',
       stage: 1, // 0 filled in · 1 submitted to HOD · 2 submitted for payment · 3 paid
       employee: {
-        name: val('empName'), email: val('empEmail'), empNo: val('empNo'),
-        dept: val('empDept'),
-        site: val('empSite'), machine: val('empMachine'), carReg: val('carReg'),
-        kmReason: val('kmReason')
+        name: val('empName'), email: val('empEmail'),
+        site: val('empSite'), machine: val('empMachine'), carReg: val('carReg')
       },
-      banking: collectBanking(proofFile),
+      banking: {
+        holder: val('bankHolder'), bank: val('bankName'), acc: val('bankAcc'),
+        proofName: proofFile ? proofFile.name : ''
+      },
       km, other, kmTotal, otherTotal, grandTotal: kmTotal + otherTotal
-    };
-  }
-
-  // Reads a field's trimmed value. Top-level so every function can use it
-  // (collectClaim has its own private `val`, which is not in scope out here).
-  function fieldVal(id) {
-    const el = document.getElementById(id);
-    return el ? el.value.trim() : '';
-  }
-
-  // Returns the banking to record on a claim, based on the selected source.
-  function collectBanking(proofFile) {
-    const src = document.getElementById('bankSource');
-    if (src && src.value === 'main' && mainBanking) {
-      return {
-        holder: mainBanking.holder || '', bank: mainBanking.bank || '', acc: mainBanking.acc || '',
-        proofName: mainBanking.proofName || '', proofPath: mainBanking.proofPath || '',
-        _file: null, source: 'main'
-      };
-    }
-    return {
-      holder: fieldVal('bankHolder'), bank: fieldVal('bankName'), acc: fieldVal('bankAcc'),
-      proofName: proofFile ? proofFile.name : (editingProofName || ''),
-      proofPath: editingProofPath || '',
-      _file: proofFile || null, source: 'other'
     };
   }
 
   function resetForm() {
     kmBody.innerHTML = ''; addRow('km'); addRow('km');
     otherBody.innerHTML = ''; addRow('other'); addRow('other');
-    ['bankHolder', 'bankName', 'bankAcc', 'carReg', 'kmReason'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-    const empNoEl = document.getElementById('empNo');
-    if (empNoEl && savedEmpNo) empNoEl.value = savedEmpNo;   // keep the remembered values
-    const empDeptEl = document.getElementById('empDept');
-    if (empDeptEl && savedDept) empDeptEl.value = savedDept;
+    ['bankHolder', 'bankName', 'bankAcc', 'carReg'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     bankProofInput.value = '';
     bankProofBtn.classList.remove('has-file', 'field-error', 'busy');
     bankProofBtn.innerHTML = uploadSvg + '<span class="pf-label">Upload bank confirmation letter</span>';
-    // Return the banking section to its Main view for the next claim.
-    bankEditingMain = false;
-    const bankSrc = document.getElementById('bankSource');
-    if (bankSrc) bankSrc.value = mainBanking ? 'main' : 'other';
-    if (typeof applyBankSource === 'function') applyBankSource();
     recalc();
   }
 
@@ -1303,76 +957,12 @@
   let modalClaim = null;
 
   function row2(a, b) { return '<tr><th>' + a + '</th><td>' + (b || '—') + '</td></tr>'; }
-  // ---- Proof documents: download / print stored images via short-lived signed URLs ----
-  async function getSignedUrl(path, opts) {
-    const sb = window.mdgAuth && window.mdgAuth.client;
-    if (!sb || !path) return null;
-    const { data, error } = await sb.storage.from('claim-proofs').createSignedUrl(path, 300, opts || {});
-    if (error) { console.error('Could not open proof:', error.message); return null; }
-    return data ? data.signedUrl : null;
-  }
-
-  async function downloadProof(path) {
-    const name = (path || '').split('/').pop() || 'proof';
-    const url = await getSignedUrl(path, { download: name });   // forces a download with the original filename
-    if (!url) { showToast('Could not open that file. Please try again.', 4000); return; }
-    const a = document.createElement('a');
-    a.href = url; a.download = name;
-    document.body.appendChild(a); a.click(); a.remove();
-  }
-
-  async function printProof(path) {
-    const url = await getSignedUrl(path);
-    if (!url) { showToast('Could not open that file. Please try again.', 4000); return; }
-    const w = window.open('', '_blank');
-    if (!w) { showToast('Please allow pop-ups so the proof can open for printing.', 5000); return; }
-    if (/\.pdf(\?|$)/i.test(path)) {
-      w.location = url;                          // the browser's PDF viewer handles printing
-    } else {
-      w.document.write('<html><head><title>Print proof</title>' +
-        '<style>html,body{margin:0;padding:0}img{display:block;max-width:100%;margin:0 auto}</style></head>' +
-        '<body><img src="' + url + '" onload="setTimeout(function(){window.focus();window.print();},150)"></body></html>');
-      w.document.close();
-    }
-  }
-
-  // The "Proof documents" section shown in the claim detail.
-  function buildProofs(c) {
-    const items = [];
-    if (c.banking && c.banking.proofPath) {
-      items.push({ path: c.banking.proofPath, label: 'Bank confirmation letter' });
-    }
-    (c.km || []).forEach((r, i) => {
-      if (r.proofPath) {
-        const route = (r.from || '') + (r.to ? ' \u2192 ' + r.to : '');
-        items.push({ path: r.proofPath, label: 'Odometer photo' + (route ? ' (' + route + ')' : ' (row ' + (i + 1) + ')') });
-      }
-    });
-    (c.other || []).forEach((r, i) => {
-      if (r.proofPath) items.push({ path: r.proofPath, label: 'Receipt' + (r.desc ? ' (' + r.desc + ')' : ' (row ' + (i + 1) + ')') });
-    });
-    if (!items.length) return '';
-    let h = '<h4>Proof documents</h4><table class="detail-kv">';
-    items.forEach(it => {
-      h += '<tr><td>' + escapeHtml(it.label) + '</td>' +
-        '<td style="text-align:right; white-space:nowrap;">' +
-        '<button class="mini-btn" data-proof-action="download" data-proof-path="' + it.path + '">Download</button> ' +
-        '<button class="mini-btn" data-proof-action="print" data-proof-path="' + it.path + '">Print</button>' +
-        '</td></tr>';
-    });
-    h += '</table>';
-    return h;
-  }
-
   function buildDetail(c) {
     let h = '<table class="detail-kv">' +
       row2('Employee', c.employee.name) +
-      row2('Employee number', c.employee.empNo || '') +
-      row2('Department', c.employee.dept || '') +
       row2('Email', c.employee.email) + row2('Site', c.employee.site) +
       row2('Machine', c.employee.machine) +
-      row2('Car registration', c.employee.carReg) +
-      (c.employee.kmReason ? row2('Reason for travelling', c.employee.kmReason) : '') + '</table>';
+      row2('Car registration', c.employee.carReg) + '</table>';
 
     h += '<h4>Banking details</h4><table class="detail-kv">' +
       row2('Account holder', c.banking.holder) + row2('Bank', c.banking.bank) +
@@ -1394,80 +984,7 @@
     if (c.kmFlagged) {
       h += '<div class="km-flag" style="margin-top:18px;">The kilometres and/or route on this claim reflect a previous disbursement. Please ensure the accuracy and integrity of this disbursement.</div>';
     }
-    if (isLateClaim(c)) {
-      h += '<div style="margin-top:14px;background:#fff4e0;border:1px solid #f5a623;color:#7a5300;border-radius:8px;padding:10px 12px;font-size:14px;">&#9888; Disbursement submitted 90 days after initial day of purchase. Falls outside policy terms.</div>';
-    }
-    h += '<h4>Proof documents</h4><div id="proofDocs" class="proof-list">Loading…</div>';
     return h;
-  }
-
-  // ---- Proof documents: view / download / print (private, via short-lived signed links) ----
-  function proofIsImage(path) {
-    return /\.(jpe?g|png|gif|webp|bmp|heic)$/i.test(path || '');
-  }
-  async function proofSignedUrl(path) {
-    const sb = window.mdgAuth && window.mdgAuth.client;
-    if (!sb || !path) return null;
-    const { data, error } = await sb.storage.from('claim-proofs').createSignedUrl(path, 300);
-    if (error) { console.error('Could not create link:', error.message); return null; }
-    return data ? data.signedUrl : null;
-  }
-  function collectProofs(c) {
-    const list = [];
-    (c.km || []).forEach((r, i) => { if (r.proofPath) list.push({ label: 'Odometer photo — travelling row ' + (i + 1), path: r.proofPath }); });
-    (c.other || []).forEach((r, i) => { if (r.proofPath) list.push({ label: 'Receipt — other claim row ' + (i + 1), path: r.proofPath }); });
-    if (c.banking && c.banking.proofPath) list.push({ label: 'Bank confirmation letter', path: c.banking.proofPath, filename: c.banking.proofName });
-    return list;
-  }
-  async function downloadProof(path, filename) {
-    const url = await proofSignedUrl(path);
-    if (!url) { showToast('Could not open that file.', 4000); return; }
-    try {
-      const res = await fetch(url);
-      const blob = await res.blob();
-      const obj = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = obj; a.download = filename || path.split('/').pop();
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(obj), 5000);
-    } catch (e) { console.error('Download failed:', e); showToast('Could not download that file.', 4000); }
-  }
-  async function printProof(path) {
-    const url = await proofSignedUrl(path);
-    if (!url) { showToast('Could not open that file.', 4000); return; }
-    const w = window.open('', '_blank');
-    if (!w) { showToast('Allow pop-ups for this site to print the proof.', 5000); return; }
-    if (proofIsImage(path)) {
-      w.document.write('<html><head><title>Proof</title><style>@page{margin:12mm}body{margin:0}img{max-width:100%;display:block;margin:0 auto}</style></head><body><img src="' + url + '" onload="setTimeout(function(){window.focus();window.print();},250)"></body></html>');
-      w.document.close();
-    } else {
-      w.location.href = url;   // PDFs open in the browser's own viewer, which has a print button
-    }
-  }
-  async function renderProofDocs(c) {
-    const wrap = document.getElementById('proofDocs');
-    if (!wrap) return;
-    const proofs = collectProofs(c);
-    if (!proofs.length) {
-      wrap.innerHTML = '<div style="color:var(--text-dim);font-size:13px;">No proof documents were attached to this claim.</div>';
-      return;
-    }
-    wrap.innerHTML = '';
-    proofs.forEach(p => {
-      const row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--border);';
-      const name = document.createElement('span');
-      name.textContent = p.label;
-      name.style.cssText = 'flex:1;font-size:13px;';
-      const dl = document.createElement('button');
-      dl.className = 'mini-btn'; dl.type = 'button'; dl.textContent = 'Download';
-      dl.addEventListener('click', () => downloadProof(p.path, p.filename));
-      const pr = document.createElement('button');
-      pr.className = 'mini-btn'; pr.type = 'button'; pr.textContent = 'Print';
-      pr.addEventListener('click', () => printProof(p.path));
-      row.appendChild(name); row.appendChild(dl); row.appendChild(pr);
-      wrap.appendChild(row);
-    });
   }
 
   function openClaim(c) {
@@ -1477,7 +994,6 @@
     document.getElementById('mSub').textContent = 'Submitted ' + fmtDateTime(c.submitted) + '  ·  ' + c.status;
     document.getElementById('mBody').innerHTML = buildDetail(c);
     modal.classList.remove('hidden');
-    renderProofDocs(c);
   }
   function closeModal() { modal.classList.add('hidden'); }
   document.getElementById('mClose').addEventListener('click', closeModal);
@@ -1488,10 +1004,8 @@
   /* ---- Confirmation dialog ---- */
   const confirmModal = document.getElementById('confirmModal');
   let confirmCb = null;
-  function showConfirm(message, onConfirm, okLabel) {
+  function showConfirm(message, onConfirm) {
     document.getElementById('confirmMsg').textContent = message;
-    const okBtn = document.getElementById('confirmOk');
-    if (okBtn) okBtn.textContent = okLabel || 'Delete';
     confirmCb = onConfirm;
     confirmModal.classList.remove('hidden');
   }
@@ -1781,593 +1295,14 @@
   if (kmRateInput) kmRateInput.value = KM_RATE;
   wireAdmin();
 
-  /* ---- Policy assistant: answers questions using the Disbursement Policy ---- */
-  const POLICY_FALLBACK_HTML =
-    'Unfortunately your query is not supported by the disbursement policy. If you require further assistance, please contact:<br><br>' +
-    '&bull; Jean Du Toit (CHRO) <a href="mailto:JDuToit@masterdrilling.com">JDuToit@masterdrilling.com</a><br>' +
-    '&bull; Anneke Brink (HR Business Partner) <a href="mailto:AnnekeK@masterdrilling.com">AnnekeK@masterdrilling.com</a><br>' +
-    '&bull; Angelina Lira (HR Business Partner) <a href="mailto:AngelinaL@masterdrilling.com">AngelinaL@masterdrilling.com</a>';
-
-  function policyChatAdd(role, text, isHtml) {
-    const box = document.getElementById('policyChat');
-    if (!box) return null;
-    const b = document.createElement('div');
-    b.className = 'chat-msg ' + (role === 'q' ? 'chat-q' : 'chat-a');
-    if (isHtml) b.innerHTML = text; else b.textContent = text;   // AI/user text is set as textContent (safe)
-    box.appendChild(b);
-    box.scrollTop = box.scrollHeight;
-    return b;
-  }
-
-  async function askPolicy() {
-    const input = document.getElementById('policyQuestion');
-    const btn = document.getElementById('policyAskBtn');
-    const policyEl = document.getElementById('policyText');
-    if (!input || !policyEl) return;
-    const question = (input.value || '').trim();
-    if (!question) return;
-
-    policyChatAdd('q', question);
-    input.value = '';
-    if (btn) btn.disabled = true;
-    const thinking = policyChatAdd('a', 'Thinking…');
-
-    // The policy shown on the page IS the assistant's only source of truth.
-    const policyText = policyEl.innerText;
-    const prompt =
-      "You are an assistant that answers Master Drilling Group employees' questions about the company Disbursement Policy. " +
-      'Use ONLY the policy text provided below to answer. Be concise, clear, and helpful, and do not invent rules that are not in the policy. ' +
-      'If the question cannot be answered from the policy text, reply with exactly this token and nothing else: NOT_IN_POLICY\n\n' +
-      '--- POLICY START ---\n' + policyText + '\n--- POLICY END ---\n\n' +
-      'Question: ' + question;
-
-    try {
-      const resp = await fetch(AI_PROXY_URL, {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + AI_PROXY_ANON, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt })
-      });
-      if (!resp.ok) throw new Error('proxy ' + resp.status);
-      const data = await resp.json();
-      const raw = (data && data.result ? String(data.result) : '').trim();
-      if (thinking) thinking.remove();
-      if (!raw || /NOT_IN_POLICY/i.test(raw)) {
-        policyChatAdd('a', POLICY_FALLBACK_HTML, true);
-      } else {
-        policyChatAdd('a', raw);
-      }
-    } catch (e) {
-      console.error('Policy assistant error:', e);
-      if (thinking) thinking.remove();
-      policyChatAdd('a', 'Sorry, something went wrong reaching the assistant. Please try again.');
-    } finally {
-      if (btn) btn.disabled = false;
-    }
-  }
-
-  (function wirePolicyAssistant() {
-    const btn = document.getElementById('policyAskBtn');
-    const input = document.getElementById('policyQuestion');
-    if (btn) btn.addEventListener('click', askPolicy);
-    if (input) input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); askPolicy(); } });
-  })();
-
-  // Claims now live in the database and belong to whoever is signed in. script.js
-  // runs before sign-in resolves, so we expose a hook the auth code calls once the
-  // user is authenticated (see enterApp in index.html).
-  /* ---- Main / Other bank details ---- */
-  let mainBanking = null;
-  let bankEditingMain = false;
-
-  function bankFill(b) {
-    const h = document.getElementById('bankHolder'), n = document.getElementById('bankName'), a = document.getElementById('bankAcc');
-    if (h) h.value = b ? (b.holder || '') : '';
-    if (n) n.value = b ? (b.bank || '') : '';
-    if (a) a.value = b ? (b.acc || '') : '';
-  }
-  function bankSetEditable(editable) {
-    const h = document.getElementById('bankHolder'), a = document.getElementById('bankAcc');
-    if (h) h.readOnly = !editable;
-    if (a) a.readOnly = !editable;
-    const n = document.getElementById('bankName'); if (n) n.disabled = !editable;
-  }
-  function setBankProofLabel(text) {
-    const el = document.getElementById('bankProofLabel') || (bankProofBtn && bankProofBtn.querySelector('.pf-label'));
-    if (el) el.textContent = text;
-  }
-  function applyBankSource() {
-    const srcEl = document.getElementById('bankSource');
-    if (!srcEl) return;
-    const src = srcEl.value;
-    const saveBtn = document.getElementById('bankSaveMain');
-    const updateBtn = document.getElementById('bankUpdateMain');
-    if (src === 'main' && mainBanking && !bankEditingMain) {
-      // Show the saved main details, read-only. Use "Update" to change them.
-      bankFill(mainBanking);
-      bankSetEditable(false);
-      if (bankProofBtn) bankProofBtn.style.display = 'none';
-      if (saveBtn) saveBtn.style.display = 'none';
-      if (updateBtn) updateBtn.style.display = 'inline-block';
-    } else {
-      // Editable: first-time Main setup, updating Main, or Other. Upload always available.
-      bankSetEditable(true);
-      if (bankProofBtn) bankProofBtn.style.display = '';
-      if (saveBtn) saveBtn.style.display = 'inline-block';
-      if (updateBtn) updateBtn.style.display = 'none';
-      if (!(bankProofInput.files && bankProofInput.files.length) && !(bankProofBtn && bankProofBtn.classList.contains('has-file'))) {
-        setBankProofLabel('Upload bank confirmation letter');
-      }
-    }
-  }
-  async function loadMainBanking() {
-    const sb = window.mdgAuth && window.mdgAuth.client;
-    const user = window.mdgAuth && window.mdgAuth.user;
-    if (!sb || !user) return;
-    const { data, error } = await sb.from('profiles').select('main_banking').eq('id', user.id).single();
-    if (!error && data) mainBanking = data.main_banking || null;
-    bankEditingMain = false;
-    const srcEl = document.getElementById('bankSource');
-    if (srcEl) srcEl.value = mainBanking ? 'main' : 'other';
-    applyBankSource();
-  }
-  function bankFieldsValid() {
-    return fieldVal('bankHolder') && fieldVal('bankName') && fieldVal('bankAcc') &&
-      (bankProofInput.files && bankProofInput.files.length > 0);
-  }
-  async function saveMainBanking() {
-    const sb = window.mdgAuth && window.mdgAuth.client;
-    const user = window.mdgAuth && window.mdgAuth.user;
-    if (!sb || !user) return;
-    let proofPath = mainBanking ? (mainBanking.proofPath || '') : '';
-    let proofName = mainBanking ? (mainBanking.proofName || '') : '';
-    const f = bankProofInput.files[0];
-    if (f) {
-      const safe = (f.name || 'letter').replace(/[^\w.\-]+/g, '_');
-      const path = user.id + '/main-banking/bank-' + safe;
-      const { error } = await sb.storage.from('claim-proofs').upload(path, f, { upsert: true, contentType: f.type || undefined });
-      if (error) { console.error('Main bank proof upload failed:', error.message); showToast('Could not upload the bank letter.', 4000); return; }
-      proofPath = path; proofName = f.name;
-    }
-    const mb = { holder: fieldVal('bankHolder'), bank: fieldVal('bankName'), acc: fieldVal('bankAcc'), proofPath: proofPath, proofName: proofName };
-    const { error } = await sb.from('profiles').update({ main_banking: mb }).eq('id', user.id);
-    if (error) {
-      console.error('Save main banking failed:', error.message);
-      showToast('Could not save main bank details: ' + error.message, 8000);
-      return;
-    }
-    mainBanking = mb;
-    bankEditingMain = false;
-    if (bankProofInput) bankProofInput.value = '';
-    if (bankProofBtn) bankProofBtn.classList.remove('has-file');
-    showToast('Main bank details saved.', 4000);
-    applyBankSource();
-  }
-
-  // Bank-details confirmation dialog. Uses its OWN ids so it never touches the
-  // app's delete-claim modal (which also lives at #confirmModal).
-  function confirmAction(message, onContinue) {
-    const modal = document.getElementById('bankConfirmModal');
-    const msg = document.getElementById('bankConfirmMsg');
-    const ok = document.getElementById('bankConfirmContinue');
-    const cancel = document.getElementById('bankConfirmCancel');
-    if (!modal || !ok || !cancel) { if (window.confirm(message)) onContinue(); return; }
-    msg.textContent = message;
-    modal.style.display = 'flex';
-    const close = () => { modal.style.display = 'none'; ok.onclick = null; cancel.onclick = null; };
-    ok.onclick = () => { close(); onContinue(); };
-    cancel.onclick = close;
-  }
-
-  // Second popup: pick the new bank letter, let the AI read it, and fill the fields.
-  function openBankReupload() {
-    const modal = document.getElementById('bankReupModal');
-    const pick = document.getElementById('bankReupPick');
-    const input = document.getElementById('bankReupInput');
-    const cancel = document.getElementById('bankReupCancel');
-    if (!modal || !pick || !input) { bankEditingMain = true; applyBankSource(); return; }
-
-    modal.style.display = 'flex';
-    const close = () => { modal.style.display = 'none'; pick.onclick = null; cancel.onclick = null; input.onchange = null; };
-
-    pick.onclick = () => input.click();
-    cancel.onclick = close;
-
-    input.onchange = () => {
-      const f = input.files && input.files[0];
-      if (!f) return;
-      close();
-      // Put the form into "editing my main details" mode…
-      bankEditingMain = true;
-      applyBankSource();
-      // …hand the file to the normal bank-proof input so the existing pipeline
-      // (AI read + save) works exactly as it does for a direct upload.
-      try {
-        const dt = new DataTransfer();
-        dt.items.add(f);
-        bankProofInput.files = dt.files;
-      } catch (e) { /* older browsers: the AI read below still fills the fields */ }
-      bankProofBtn.classList.add('has-file');
-      bankProofBtn.classList.remove('field-error');
-      bankProofBtn.innerHTML = uploadSvg + '<span class="pf-label">' + escapeHtml(f.name) + '</span>';
-      readBankLetter(f);              // AI reads the letter and auto-fills the fields
-      input.value = '';
-    };
-  }
-
-  (function wireBankSource() {
-    const srcEl = document.getElementById('bankSource');
-    if (srcEl) srcEl.addEventListener('change', () => {
-      bankEditingMain = false;
-      bankFill(null);
-      if (bankProofInput) bankProofInput.value = '';
-      if (bankProofBtn) bankProofBtn.classList.remove('has-file');
-      applyBankSource();
-    });
-    const saveBtn = document.getElementById('bankSaveMain');
-    if (saveBtn) saveBtn.addEventListener('click', () => {
-      if (!bankFieldsValid()) { showToast('Complete the bank details and upload a bank letter first.', 4000); return; }
-      const src = srcEl ? srcEl.value : 'other';
-      if (src === 'other') {
-        // Saving an "Other" account as Main — always confirm (per policy).
-        const msg = mainBanking
-          ? 'Are you sure you want to change your main bank details?'
-          : 'Save these as your main bank details?';
-        confirmAction(msg, saveMainBanking);
-      } else {
-        // Main tab: first-time setup, or committing an Update that was already confirmed.
-        saveMainBanking();
-      }
-    });
-    const updateBtn = document.getElementById('bankUpdateMain');
-    if (updateBtn) updateBtn.addEventListener('click', () => {
-      confirmAction('Are you sure you want to change your main bank details?', () => {
-        bankEditingMain = true;
-        bankFill(null);
-        if (bankProofInput) bankProofInput.value = '';
-        if (bankProofBtn) bankProofBtn.classList.remove('has-file');
-        applyBankSource();
-        openBankReupload();          // second popup: upload the new letter, AI reads it
-      });
-    });
-  })();
-
-  // After sign-in, find out whether this user is an admin and, if so, reveal the
-  // admin-only tabs. Note: this only affects what's SHOWN — the real protection is
-  // the database RLS, which blocks non-admins from other people's data regardless.
-  async function checkAdmin() {
-    const sb = window.mdgAuth && window.mdgAuth.client;
-    const user = window.mdgAuth && window.mdgAuth.user;
-    if (!sb || !user) return;
-    const { data, error } = await sb.from('profiles').select('is_admin').eq('id', user.id).single();
-    if (error) { console.error('Admin check failed:', error.message); return; }
-    window.mdgIsAdmin = !!(data && data.is_admin);
-    if (window.mdgIsAdmin) {
-      document.querySelectorAll('.nav-admin').forEach(el => el.classList.remove('hidden'));
-    }
-  }
-
-  /* ---- Dashboard (admin only): drill down from total > site > machine > employee > claims ---- */
-  let dashRecords = [];
-  let dashLevel = 0;          // 0 all sites · 1 machines of a site · 2 employees on a machine · 3 that employee's claims
-  let dashSite = null, dashMachine = null, dashEmployee = null;
-  let dashChart = null;
-  const DASH_HUES = ['#2a78d6','#1baf7a','#eda100','#008300','#4a3aa7','#e34948','#e87ba4','#eb6834'];
-
-  function dashEsc(s) {
-    return String(s == null ? '' : s)
-      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  }
-
-  // Pull EVERY user's claims. Non-admins are blocked by RLS, so this only
-  // returns rows to an account that is actually an admin.
-  async function loadDashboard() {
-    const sb = window.mdgAuth && window.mdgAuth.client;
-    if (!sb) return;
-    const { data, error } = await sb.from('disbursements')
-      .select('data, created_at').order('created_at', { ascending: false });
-    if (error) { console.error('Dashboard load failed:', error.message); return; }
-    dashRecords = (data || []).map(row => {
-      const c = row.data || {};
-      const e = c.employee || {};
-      return {
-        site: e.site || 'Unassigned',
-        machine: e.machine || 'Unassigned',
-        employee: e.name || 'Unknown',
-        total: typeof c.grandTotal === 'number' ? c.grandTotal : 0,
-        date: c.submitted || row.created_at,
-        status: c.status || '',
-        ref: c.ref || '',
-        km: c.km || [],
-        other: c.other || [],
-        claim: c
-      };
-    });
-    renderDashboard();
-  }
-
-  function dashInRange(r) {
-    const f = document.getElementById('dFrom').value;
-    const t = document.getElementById('dTo').value;
-    const d = (r.date || '').toString().slice(0, 10);
-    if (f && d < f) return false;
-    if (t && d > t) return false;
-    return true;
-  }
-
-  // The rows in scope for the level we're currently looking at.
-  // The rows that COUNT toward the money view. Withdrawn claims are cancelled, so
-  // they're excluded from every total, slice, and CSV export. (They're still shown,
-  // greyed, in the claims list at the deepest level — see dashScopeForList.)
-  function dashScope() {
-    let rows = dashRecords.filter(r => dashInRange(r) && r.status !== 'Withdrawn');
-    if (dashLevel >= 1) rows = rows.filter(r => r.site === dashSite);
-    if (dashLevel >= 2) rows = rows.filter(r => r.machine === dashMachine);
-    if (dashLevel >= 3) rows = rows.filter(r => r.employee === dashEmployee);
-    return rows;
-  }
-
-  // Same scope, but INCLUDING withdrawn claims — used only for the claims list, so an
-  // auditor can still see a withdrawn claim on record even though it counts for nothing.
-  function dashScopeForList() {
-    let rows = dashRecords.filter(dashInRange);
-    if (dashLevel >= 1) rows = rows.filter(r => r.site === dashSite);
-    if (dashLevel >= 2) rows = rows.filter(r => r.machine === dashMachine);
-    if (dashLevel >= 3) rows = rows.filter(r => r.employee === dashEmployee);
-    return rows;
-  }
-
-  function dashSlices(rows) {
-    const key = dashLevel === 0 ? 'site' : (dashLevel === 1 ? 'machine' : 'employee');
-    const g = {};
-    rows.forEach(r => { g[r[key]] = (g[r[key]] || 0) + r.total; });
-    const labels = Object.keys(g).sort((a, b) => g[b] - g[a]);   // biggest first
-    return { labels: labels, values: labels.map(l => g[l]) };
-  }
-
-  function renderDashboard() {
-    const rows = dashScope();
-    const total = rows.reduce((s, r) => s + r.total, 0);
-
-    const titles = [
-      'Total disbursed · all sites',
-      'Total disbursed · ' + dashSite,
-      dashSite + ' · ' + dashMachine,
-      dashEmployee + ' · ' + dashMachine + ' · ' + dashSite
-    ];
-    document.getElementById('dStatLabel').textContent = titles[dashLevel];
-    document.getElementById('dStatValue').textContent = money.format(total);
-    document.getElementById('dStatSub').textContent = rows.length + (rows.length === 1 ? ' claim' : ' claims');
-
-    // Breadcrumb
-    const cb = document.getElementById('dCrumbs');
-    cb.innerHTML = '';
-    const parts = [{ t: 'All sites', lv: 0 }];
-    if (dashLevel >= 1) parts.push({ t: dashSite, lv: 1 });
-    if (dashLevel >= 2) parts.push({ t: dashMachine, lv: 2 });
-    if (dashLevel >= 3) parts.push({ t: dashEmployee, lv: 3 });
-    parts.forEach((p, i) => {
-      const last = i === parts.length - 1;
-      const el = document.createElement(last ? 'span' : 'a');
-      el.textContent = p.t;
-      if (last) el.className = 'here';
-      else el.addEventListener('click', () => { dashGoTo(p.lv); });
-      cb.appendChild(el);
-      if (!last) { const s = document.createElement('span'); s.className = 'sep'; s.textContent = '›'; cb.appendChild(s); }
-    });
-
-    const chartWrap = document.querySelector('.dash-chart-wrap');
-    const legend = document.getElementById('dLegend');
-    const hint = document.getElementById('dHint');
-    const claimsCard = document.getElementById('dClaimsCard');
-
-    if (dashLevel === 3) {
-      // Deepest level: this employee's individual claims.
-      chartWrap.style.display = 'none';
-      legend.innerHTML = '';
-      hint.textContent = 'Every claim ' + dashEmployee + ' submitted here. Open one to see the full detail and banking.';
-      claimsCard.style.display = '';
-      document.getElementById('dClaimsTitle').textContent = 'Claims by ' + dashEmployee;
-      renderDashClaims(dashScopeForList());   // list includes withdrawn (greyed); totals above exclude them
-      if (dashChart) { dashChart.destroy(); dashChart = null; }
-      return;
-    }
-
-    chartWrap.style.display = '';
-    claimsCard.style.display = 'none';
-    hint.textContent = 'Click a slice to drill down into the data.';
-
-    const d = dashSlices(rows);
-
-    legend.innerHTML = d.labels.map((l, i) => {
-      const pct = total ? Math.round(d.values[i] / total * 100) : 0;
-      return '<span class="item"><i style="background:' + DASH_HUES[i % 8] + '"></i>' +
-             dashEsc(l) + ' · ' + money.format(d.values[i]) + ' (' + pct + '%)</span>';
-    }).join('');
-
-    if (dashChart) dashChart.destroy();
-    if (!window.Chart || !d.labels.length) {
-      if (!d.labels.length) legend.innerHTML = '<span class="item">No claims in this period.</span>';
-      return;
-    }
-    dashChart = new window.Chart(document.getElementById('dDonut'), {
-      type: 'doughnut',
-      data: {
-        labels: d.labels,
-        datasets: [{
-          data: d.values,
-          backgroundColor: d.labels.map((_, i) => DASH_HUES[i % 8]),
-          borderWidth: 2,
-          borderColor: getComputedStyle(document.body).backgroundColor || '#fff'
-        }]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false, cutout: '58%',
-        plugins: {
-          legend: { display: false },
-          tooltip: { callbacks: { label: ctx => ctx.label + ': ' + money.format(ctx.raw) } }
-        },
-        onClick: (e, els) => {
-          if (!els.length) return;
-          const label = d.labels[els[0].index];
-          if (dashLevel === 0) { dashSite = label; dashLevel = 1; }
-          else if (dashLevel === 1) { dashMachine = label; dashLevel = 2; }
-          else if (dashLevel === 2) { dashEmployee = label; dashLevel = 3; }
-          renderDashboard();
-        },
-        onHover: (e, els) => { e.native.target.style.cursor = els.length ? 'pointer' : 'default'; }
-      }
-    });
-  }
-
-  function dashGoTo(level) {
-    dashLevel = level;
-    if (level < 3) dashEmployee = null;
-    if (level < 2) dashMachine = null;
-    if (level < 1) dashSite = null;
-    renderDashboard();
-  }
-
-  function renderDashClaims(rows) {
-    const box = document.getElementById('dClaimsList');
-    const sorted = rows.slice().sort((a, b) => new Date(b.date) - new Date(a.date));
-    if (!sorted.length) { box.innerHTML = '<p style="color:var(--text-dim);font-size:13px;">No claims in this period.</p>'; return; }
-    box.innerHTML = sorted.map((r, i) => {
-      const items = [];
-      (r.km || []).forEach(k => items.push('Travel: ' + (k.from || '?') + ' → ' + (k.to || '?') + ' (' + (k.km || 0) + ' km)'));
-      (r.other || []).forEach(o => items.push((o.desc || 'Other') + ' — ' + (o.currency || 'ZAR') + ' ' + (o.amount != null ? (+o.amount).toFixed(2) : '')));
-      const withdrawn = r.status === 'Withdrawn';
-      return '<div class="dash-claim"' + (withdrawn ? ' style="opacity:.55;"' : '') + '>' +
-        '<div class="dash-claim-head"><strong>' + dashEsc(r.ref) + '</strong>' +
-        '<span>' + fmtDate(r.date) + '</span>' +
-        '<span>' + dashEsc(r.status) + '</span>' +
-        '<span class="dash-claim-total">' + money.format(r.total) + '</span>' +
-        '<button class="mini-btn" data-dash-open="' + i + '">View</button></div>' +
-        '<div class="dash-claim-items">' + (items.length ? items.map(dashEsc).join('  ·  ') : 'No line items') + '</div>' +
-        '</div>';
-    }).join('');
-    box.querySelectorAll('[data-dash-open]').forEach(b => {
-      b.addEventListener('click', () => {
-        const rec = sorted[parseInt(b.dataset.dashOpen, 10)];
-        if (rec && rec.claim) openClaim(rec.claim);      // full detail incl. banking
-      });
-    });
-  }
-
-  /* ---- CSV export: exports exactly what you're looking at ---- */
-  function csvCell(v) {
-    const s = String(v == null ? '' : v);
-    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-  }
-  function downloadCsv(filename, rows) {
-    const csv = rows.map(r => r.map(csvCell).join(',')).join('\r\n');
-    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });   // BOM so Excel reads it cleanly
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = filename;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
-  }
-  function exportDashboardCsv() {
-    const rows = dashScope();
-    const from = document.getElementById('dFrom').value || 'start';
-    const to = document.getElementById('dTo').value || 'today';
-    const total = rows.reduce((s, r) => s + r.total, 0);
-    const out = [];
-
-    if (dashLevel === 3) {
-      out.push(['Reference', 'Date', 'Status', 'Employee', 'Site', 'Machine', 'Total (ZAR)']);
-      rows.slice().sort((a, b) => new Date(b.date) - new Date(a.date))
-        .forEach(r => out.push([r.ref, (r.date || '').toString().slice(0, 10), r.status, r.employee, r.site, r.machine, r.total.toFixed(2)]));
-    } else {
-      const heading = dashLevel === 0 ? 'Site' : (dashLevel === 1 ? 'Machine' : 'Employee');
-      const d = dashSlices(rows);
-      out.push([heading, 'Total (ZAR)', 'Share (%)', 'Claims']);
-      d.labels.forEach((l, i) => {
-        const key = dashLevel === 0 ? 'site' : (dashLevel === 1 ? 'machine' : 'employee');
-        const count = rows.filter(r => r[key] === l).length;
-        const pct = total ? (d.values[i] / total * 100).toFixed(1) : '0.0';
-        out.push([l, d.values[i].toFixed(2), pct, count]);
-      });
-    }
-    out.push([]);
-    out.push(['Total', total.toFixed(2), '', rows.length]);
-    out.push(['Period', from + ' to ' + to]);
-    if (dashSite) out.push(['Site', dashSite]);
-    if (dashMachine) out.push(['Machine', dashMachine]);
-    if (dashEmployee) out.push(['Employee', dashEmployee]);
-
-    const scope = ['all-sites', dashSite, dashMachine, dashEmployee]
-      .slice(0, dashLevel + 1).join('-').replace(/[^\w\-]+/g, '_');
-    downloadCsv('disbursements-' + scope + '-' + from + '-to-' + to + '.csv', out);
-  }
-
-  function dashSetThisMonth() {
-    const now = new Date();
-    const first = new Date(now.getFullYear(), now.getMonth(), 1);
-    const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    const iso = d => d.toISOString().slice(0, 10);
-    document.getElementById('dFrom').value = iso(first);
-    document.getElementById('dTo').value = iso(last);
-  }
-
-  (function wireDashboard() {
-    ['dFrom', 'dTo'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.addEventListener('change', renderDashboard);
-    });
-    const thisMonth = document.getElementById('dThisMonth');
-    if (thisMonth) thisMonth.addEventListener('click', () => { dashSetThisMonth(); renderDashboard(); });
-    const reset = document.getElementById('dReset');
-    if (reset) reset.addEventListener('click', () => { dashSetThisMonth(); dashGoTo(0); });
-    const exp = document.getElementById('dExport');
-    if (exp) exp.addEventListener('click', exportDashboardCsv);
-
-    dashSetThisMonth();   // Finance reconciles by month, so default to the current one.
-
-    // Refresh whenever the Dashboard tab is opened.
-    document.querySelectorAll('.nav-item[data-view="dashboard"]').forEach(n =>
-      n.addEventListener('click', () => { dashGoTo(0); loadDashboard(); }));
-  })();
-
-  // Employee number and department are saved to the user's profile, so they only
-  // have to be entered once — after that they fill themselves in on every claim.
-  // (Both will come from the Workforce app once that integration is possible.)
-  let savedEmpNo = '';
-  let savedDept = '';
-  async function loadProfileFields() {
-    const sb = window.mdgAuth && window.mdgAuth.client;
-    const user = window.mdgAuth && window.mdgAuth.user;
-    if (!sb || !user) return;
-    const { data, error } = await sb.from('profiles')
-      .select('employee_no, department').eq('id', user.id).single();
-    if (error) { console.error('Could not load profile fields:', error.message); return; }
-    savedEmpNo = (data && data.employee_no) || '';
-    savedDept  = (data && data.department) || '';
-    const noEl = document.getElementById('empNo');
-    const dpEl = document.getElementById('empDept');
-    if (noEl && savedEmpNo) noEl.value = savedEmpNo;
-    if (dpEl && savedDept)  dpEl.value = savedDept;
-  }
-  async function saveProfileFields(empNo, dept) {
-    const sb = window.mdgAuth && window.mdgAuth.client;
-    const user = window.mdgAuth && window.mdgAuth.user;
-    if (!sb || !user) return;
-    const patch = {};
-    if (empNo && empNo !== savedEmpNo) patch.employee_no = empNo;
-    if (dept && dept !== savedDept)    patch.department = dept;
-    if (!Object.keys(patch).length) return;                 // nothing changed
-    const { error } = await sb.from('profiles').update(patch).eq('id', user.id);
-    if (error) { console.error('Could not save profile fields:', error.message); return; }
-    if (patch.employee_no) savedEmpNo = patch.employee_no;
-    if (patch.department)  savedDept  = patch.department;
-  }
-
-  window.mdgApp = window.mdgApp || {};
-  window.mdgApp.onAuthed = function () { loadClaims(); checkAdmin(); loadMainBanking(); loadProfileFields(); };
+  // load saved claim history (survives reloads on this device)
+  loadClaims();
+  recomputeKmFlags();
+  saveClaims();
 
   recalc();
 
-  // Empty Previous Claims table until this user's claims arrive from the database.
+  // render the Previous Claims table (from saved history)
   renderPrev();
 
   // fetch today's currency rates
