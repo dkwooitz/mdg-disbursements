@@ -38,8 +38,8 @@
       Admin
     </div>
     <div class="nav-item" data-view="manual">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 4h11a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2z"/><path d="M17 6h3v12a2 2 0 0 1-2 2h-1"/></svg>
-      Manual
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg>
+      Policy
     </div>
     <div class="nav-item" data-view="settings">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.3 1a7 7 0 0 0-1.7-1l-.3-2.6h-4l-.3 2.6a7 7 0 0 0-1.7 1l-2.3-1-2 3.4 2 1.5a7 7 0 0 0 0 2l-2 1.5 2 3.4 2.3-1a7 7 0 0 0 1.7 1l.3 2.6h4l.3-2.6a7 7 0 0 0 1.7-1l2.3 1 2-3.4-2-1.5c.07-.33.1-.66.1-1z"/></svg>
@@ -121,19 +121,20 @@
         <h2 class="card-title">Requestor</h2>
         <div class="grid-2">
           <div class="field">
-            <label>Employee name<span class="req">*</span></label>
-            <select id="empName">
-              <option value="">Select an employee…</option>
-              <option selected>Diedrik Kwooitz</option>
-              <option>Shané van Wyk</option>
-              <option>Thabo Molefe</option>
-              <option>Anika Pretorius</option>
-              <option>Sipho Ndlovu</option>
-            </select>
+            <label>Name<span class="req">*</span></label>
+            <input type="text" id="empName" data-required placeholder="First name" />
+          </div>
+          <div class="field">
+            <label>Surname<span class="req">*</span></label>
+            <input type="text" id="empSurname" data-required placeholder="Surname" />
+          </div>
+          <div class="field">
+            <label>Employee number<span class="req">*</span></label>
+            <input type="text" id="empNumber" data-required placeholder="e.g. 10234" />
           </div>
           <div class="field">
             <label>Email<span class="req">*</span></label>
-            <input type="email" id="empEmail" value="DKwooitz@masterdrilling.com" />
+            <input type="email" id="empEmail" data-required placeholder="name@masterdrilling.com" />
           </div>
           <div class="field">
             <label>Site<span class="req">*</span></label>
@@ -333,7 +334,7 @@
         <p class="proto-note">Changes are saved in this browser for now. Once the backend is connected, these settings will be shared for everyone.</p>
       </div><!-- /view-admin -->
 
-      <!-- ===== Manual: Disbursement policy ===== -->
+      <!-- ===== Policy: Disbursement policy ===== -->
       <div class="view hidden" id="view-manual">
         <h1 class="page-title">Disbursement Policy</h1>
         <p class="page-sub">The rules that govern travelling and other claims. Please read before submitting.</p>

@@ -333,6 +333,26 @@
   const policyAskBtn = document.getElementById('policyAskBtn');
   const policyA = document.getElementById('policyA');
 
+  // The model sometimes wraps its reply in JSON or code fences — unwrap to plain text.
+  function plainAnswer(raw) {
+    let t = String(raw || '').trim();
+    t = t.replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+    if (t.startsWith('{') || t.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(t);
+        const obj = Array.isArray(parsed) ? parsed[0] : parsed;
+        if (typeof obj === 'string') return obj.trim();
+        if (obj && typeof obj === 'object') {
+          const preferred = obj.answer || obj.response || obj.text || obj.result || obj.message;
+          if (typeof preferred === 'string') return preferred.trim();
+          const firstString = Object.values(obj).find(v => typeof v === 'string');
+          if (firstString) return firstString.trim();
+        }
+      } catch (e) { /* not JSON after all — fall through */ }
+    }
+    return t;
+  }
+
   async function askPolicy() {
     const q = (policyQ.value || '').trim();
     if (!q) return;
@@ -343,12 +363,14 @@
     try {
       const prompt =
         'The attached text is Master Drilling\'s disbursement policy, including the "Requirements from Finance" section. ' +
-        'Answer the employee\'s question using ONLY this policy. Be brief, clear and practical — two or three sentences. ' +
+        'Answer the employee\'s question using ONLY this policy. ' +
+        'Reply with plain conversational text only — no JSON, no code fences, no markdown, no field names, no quotation marks around the answer. ' +
+        'Be brief, clear and practical: two or three sentences. ' +
         'If the policy does not cover the question, say so plainly and suggest they contact the Finance department. ' +
         'Do not invent rules, dates or amounts.\n\nEmployee question: ' + q;
-      const answer = await callAIProxy(toBase64Utf8(getPolicyText()), 'text/plain', prompt);
-      policyA.textContent = answer && answer.trim()
-        ? answer.trim()
+      const answer = plainAnswer(await callAIProxy(toBase64Utf8(getPolicyText()), 'text/plain', prompt));
+      policyA.textContent = answer
+        ? answer
         : 'No answer came back — please try rephrasing your question, or contact the Finance department.';
     } catch (e) {
       policyA.textContent = 'The policy assistant is unavailable right now. Please read the policy above, or contact the Finance department for help.';
@@ -493,7 +515,7 @@
   function claimSig(d) {
     const km = (d.km || []).map(r => [r.date, r.from, r.to, r.km, (+r.amount).toFixed(2)].join(',')).sort().join(';');
     const oth = (d.other || []).map(r => [r.date, (r.desc || '').toLowerCase().trim(), r.currency, (+r.amount).toFixed(2)].join(',')).sort().join(';');
-    return [(d.employee.name || '').toLowerCase().trim(), km, oth, (+d.grandTotal).toFixed(2)].join('||');
+    return [(fullName(d.employee) + '|' + (d.employee.number || '')).toLowerCase().trim(), km, oth, (+d.grandTotal).toFixed(2)].join('||');
   }
   // A route/distance signature for a travelling line (from + to + kilometres).
   function kmSig(r) {
@@ -817,6 +839,7 @@
   }
 
   function fmtDate(d)     { return new Date(d).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }); }
+  function fullName(e)    { return [(e && e.name) || '', (e && e.surname) || ''].filter(Boolean).join(' ').trim(); }
   function fmtDateTime(d) { return new Date(d).toLocaleString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
   function newRef() { return 'DSB-' + new Date().getFullYear() + '-' + String(refSeq++).padStart(4, '0'); }
 
@@ -904,6 +927,8 @@
 
   function populateForm(c) {
     setVal('empName', c.employee.name);
+    setVal('empSurname', c.employee.surname);
+    setVal('empNumber', c.employee.number);
     setVal('empEmail', c.employee.email);
     setVal('empSite', c.employee.site);
     setVal('empMachine', c.employee.machine);
@@ -1008,7 +1033,7 @@
       status: 'Pending HOD',
       stage: 1, // 0 filled in · 1 submitted to HOD · 2 submitted for payment · 3 paid
       employee: {
-        name: val('empName'), email: val('empEmail'),
+        name: val('empName'), surname: val('empSurname'), number: val('empNumber'), email: val('empEmail'),
         site: val('empSite'), machine: val('empMachine'), carReg: val('carReg')
       },
       banking: {
@@ -1043,7 +1068,8 @@
   function row2(a, b) { return '<tr><th>' + a + '</th><td>' + (b || '—') + '</td></tr>'; }
   function buildDetail(c) {
     let h = '<table class="detail-kv">' +
-      row2('Employee', c.employee.name) +
+      row2('Employee', fullName(c.employee)) +
+      row2('Employee number', c.employee.number) +
       row2('Email', c.employee.email) + row2('Site', c.employee.site) +
       row2('Machine', c.employee.machine) +
       row2('Car registration', c.employee.carReg) + '</table>';
@@ -1143,9 +1169,10 @@
     doc.autoTable({
       startY: y, theme: 'grid', styles: { fontSize: 9, cellPadding: 4 },
       body: [
-        ['Employee Name', c.employee.name || '—', 'Date', fmtDate(c.submitted)],
-        ['Email', c.employee.email || '—', 'Car Registration Number', c.employee.carReg || '—'],
-        ['Site', c.employee.site || '—', 'Machine', c.employee.machine || '—']
+        ['Employee Name', fullName(c.employee) || '—', 'Employee Number', c.employee.number || '—'],
+        ['Email', c.employee.email || '—', 'Date', fmtDate(c.submitted)],
+        ['Site', c.employee.site || '—', 'Machine', c.employee.machine || '—'],
+        ['Car Registration Number', c.employee.carReg || '—', '', '']
       ],
       columnStyles: { 0: { fontStyle: 'bold', fillColor: [245, 245, 245] }, 2: { fontStyle: 'bold', fillColor: [245, 245, 245] } },
       margin: { left: M, right: M }
@@ -1207,7 +1234,7 @@
       head: [['Designation', 'Name', 'Signature', 'Date']],
       body: [
         ['H.O.D / Site Manager', '', '', ''],
-        ['Employee', c.employee.name || '', '', fmtDate(c.submitted)]
+        ['Employee', fullName(c.employee) || '', '', fmtDate(c.submitted)]
       ],
       headStyles: { fillColor: NAVY, textColor: 255 },
       margin: { left: M, right: M }
