@@ -1021,10 +1021,10 @@
       const tr = document.createElement('tr');
       tr.className = 'claim-row' + (c.ref === highlightRef ? ' row-new' : '');
       const flagBadge = c.kmFlagged
-        ? ' <span class="km-flag-badge" title="The kilometres and/or the route reflects a previous disbursement. Please ensure accuracy and integrity of disbursement.">!</span>'
+        ? '<span class="km-flag-badge" data-tip="The kilometers submitted are duplicate of a previous submission. Please ensure correctness of submission.">!</span>'
         : '';
       tr.innerHTML =
-        '<td class="ref">' + c.ref + flagBadge + '</td>' +
+        '<td class="ref"><div class="ref-wrap"><span class="ref-no">' + c.ref + '</span>' + flagBadge + '</div></td>' +
         '<td>' + fmtDate(c.submitted) + '</td>' +
         '<td>' + typeLabel(c) + '</td>' +
         '<td style="text-align:right">' + money.format(c.grandTotal) + '</td>' +

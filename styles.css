@@ -394,13 +394,33 @@
     font-size: 13px; line-height: 1.5;
   }
   .km-flag.hidden { display: none; }
+  .ref-wrap { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; }
   .km-flag-badge {
+    position: relative;
     display: inline-flex; align-items: center; justify-content: center;
-    width: 18px; height: 18px; border-radius: 50%;
+    width: 20px; height: 20px; border-radius: 50%;
     background: var(--danger); color: #fff;
-    font-size: 12px; font-weight: 800; line-height: 1;
-    cursor: help; vertical-align: middle; margin-left: 2px;
-  }  .submit-msg.err { color: var(--danger); }
+    font-size: 13px; font-weight: 800; line-height: 1;
+    cursor: help;
+  }
+  .km-flag-badge::after {
+    content: attr(data-tip);
+    position: absolute; left: 0; top: calc(100% + 8px);
+    width: 244px; padding: 10px 12px;
+    background: #fdeaea; color: #9b1c1c; border: 1px solid #e0736e;
+    border-radius: 8px; box-shadow: 0 10px 26px rgba(155,28,28,.22);
+    font-size: 12px; font-weight: 500; line-height: 1.45; text-align: left;
+    opacity: 0; visibility: hidden; transform: translateY(-4px);
+    transition: opacity .15s ease, transform .15s ease;
+    z-index: 60; pointer-events: none;
+  }
+  .km-flag-badge:hover::after { opacity: 1; visibility: visible; transform: translateY(0); }
+  /* Keep the table corners neat now that the card allows overflow */
+  .history-table thead th:first-child { border-top-left-radius: 12px; }
+  .history-table thead th:last-child { border-top-right-radius: 12px; }
+  .history-table tbody tr:last-child td:first-child { border-bottom-left-radius: 12px; }
+  .history-table tbody tr:last-child td:last-child { border-bottom-right-radius: 12px; }
+  .submit-msg.err { color: var(--danger); }
   .submit-msg.ok { color: #28a76a; }
 
   /* Admin editors */
