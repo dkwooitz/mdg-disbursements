@@ -283,6 +283,8 @@
   .bank-type-field { margin-bottom: 20px; }
   .bank-type-field select { width: 100%; }
   .bank-update-row { display: flex; justify-content: flex-end; margin-top: 22px; }
+  .bank-update-preview { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .bank-update-preview .field-hint { margin-top: 12px; }
 
   /* Tabs */
   .tabs { display: flex; gap: 6px; margin-bottom: 18px; border-bottom: 1px solid var(--border); }

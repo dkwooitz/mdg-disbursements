@@ -560,6 +560,38 @@
   </div>
 </div>
 
+<!-- Update main banking details: upload a new letter -->
+<div class="modal-overlay hidden" id="bankUpdateModal">
+  <div class="modal">
+    <div class="modal-head">
+      <div>
+        <div class="modal-ref">Update main banking details</div>
+        <div class="modal-sub">Upload a new bank confirmation letter. The details will be read for you to check, then confirm.</div>
+      </div>
+      <button class="modal-close" id="bankUpdateClose" title="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <input id="bankUpdateInput" type="file" accept="image/*,application/pdf" hidden>
+      <button id="bankUpdateUploadBtn" class="proof-upload" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 9 12 4 17 9"/><line x1="12" y1="4" x2="12" y2="16"/></svg>
+        <span id="bankUpdateLabel">Upload bank confirmation letter</span>
+      </button>
+      <div class="bank-update-preview hidden" id="bankUpdatePreview">
+        <table class="detail-kv">
+          <tr><th>Account holder</th><td id="buHolder">—</td></tr>
+          <tr><th>Bank</th><td id="buBank">—</td></tr>
+          <tr><th>Account number</th><td id="buAcc">—</td></tr>
+        </table>
+        <p class="field-hint">Please check every digit is correct before confirming.</p>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="bankUpdateCancel">Cancel</button>
+      <button class="btn btn-primary" id="bankUpdateConfirm" disabled>Confirm</button>
+    </div>
+  </div>
+</div>
+
 <script src="script.js"></script>
 </body>
 </html>

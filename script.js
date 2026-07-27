@@ -730,15 +730,109 @@
 
   if (updateBankBtn) {
     updateBankBtn.addEventListener('click', () => {
-      const msg = currentBankType === 'other'
-        ? 'Are you sure that you want to update your banking details? Please ensure that the information is correct once the changes are accepted.'
-        : 'You are about to update your main banking details. Are you certain that you would like to do this? If accepted, please ensure that the information is correct.';
-      showConfirm(msg, () => {
-        commitMainBank();
-        showToast('Your main banking details have been updated.', 4500);
-      }, { okText: 'Confirm', okClass: 'btn-primary' });
+      if (currentBankType === 'other') {
+        // Unchanged: promote the currently-typed Other details to Main.
+        showConfirm(
+          'Are you sure that you want to update your banking details? Please ensure that the information is correct once the changes are accepted.',
+          () => { commitMainBank(); showToast('Your main banking details have been updated.', 4500); },
+          { okText: 'Confirm', okClass: 'btn-primary' }
+        );
+      } else {
+        // Main: confirm, then upload a fresh bank letter to read and confirm.
+        showConfirm(
+          'You are about to update your main banking details. Are you certain that you would like to do this? If accepted, please ensure that the information is correct.',
+          openBankUpdateModal,
+          { okText: 'Upload new banking details', okClass: 'btn-primary' }
+        );
+      }
     });
   }
+
+  /* ---- Update-main modal: upload a new bank letter, read it, then confirm ---- */
+  const bankUpdateModal = document.getElementById('bankUpdateModal');
+  const bankUpdateInput = document.getElementById('bankUpdateInput');
+  const bankUpdateUploadBtn = document.getElementById('bankUpdateUploadBtn');
+  const bankUpdateConfirm = document.getElementById('bankUpdateConfirm');
+  let pendingMainBank = null;
+
+  function matchBankName(raw) {
+    if (!raw) return '';
+    const key = String(raw).toLowerCase();
+    let m = SA_BANKS.find(b => b.toLowerCase() === key);
+    if (!m) m = SA_BANKS.find(b => b.toLowerCase().includes(key) || key.includes(b.toLowerCase().split(' ')[0]));
+    return m || String(raw);
+  }
+  function openBankUpdateModal() {
+    pendingMainBank = null;
+    bankUpdateInput.value = '';
+    bankUpdateUploadBtn.classList.remove('has-file', 'busy');
+    bankUpdateUploadBtn.innerHTML = uploadSvg + '<span class="pf-label">Upload bank confirmation letter</span>';
+    document.getElementById('bankUpdatePreview').classList.add('hidden');
+    bankUpdateConfirm.disabled = true;
+    bankUpdateModal.classList.remove('hidden');
+  }
+  function closeBankUpdateModal() { bankUpdateModal.classList.add('hidden'); }
+
+  bankUpdateUploadBtn.addEventListener('click', () => bankUpdateInput.click());
+  bankUpdateInput.addEventListener('change', async () => {
+    const file = bankUpdateInput.files[0];
+    if (!file) return;
+    bankUpdateUploadBtn.classList.add('has-file', 'busy');
+    bankUpdateUploadBtn.innerHTML = uploadSvg + '<span class="pf-label">Reading letter…</span>';
+    bankUpdateConfirm.disabled = true;
+
+    let b64;
+    try {
+      b64 = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result.split(',')[1]);
+        r.onerror = () => rej(new Error('read failed'));
+        r.readAsDataURL(file);
+      });
+    } catch (e) { return; }
+
+    const mimeType = file.type === 'application/pdf' ? 'application/pdf' : (file.type || 'image/jpeg');
+    try {
+      const prompt = 'This is a bank account confirmation letter / proof of account. Read it and respond with ONLY a JSON object — no markdown, no code fences, no commentary — in exactly this shape: {"accountHolder":"the full name of the account holder","bank":"the bank, chosen as EXACTLY one of these options (or empty string if you cannot tell): ' + SA_BANKS.join('; ') + '","accountNumber":"the account number as digits only, no spaces or dashes"}. Use an empty string for any field you cannot read.';
+      const raw = await callAIProxy(b64, mimeType, prompt);
+      const clean = raw.replace(/```json/g, '').replace(/```/g, '').trim();
+      const parsed = JSON.parse(clean);
+      pendingMainBank = {
+        holder: parsed.accountHolder || '',
+        bank: matchBankName(parsed.bank),
+        acc: parsed.accountNumber ? String(parsed.accountNumber) : '',
+        proofName: file.name
+      };
+      document.getElementById('buHolder').textContent = pendingMainBank.holder || '—';
+      document.getElementById('buBank').textContent = pendingMainBank.bank || '—';
+      document.getElementById('buAcc').textContent = pendingMainBank.acc || '—';
+      document.getElementById('bankUpdatePreview').classList.remove('hidden');
+      bankUpdateConfirm.disabled = false;
+      bankUpdateUploadBtn.innerHTML = uploadSvg + '<span class="pf-label">' + escapeHtml(file.name) + '</span>';
+    } catch (e) {
+      bankUpdateUploadBtn.innerHTML = uploadSvg + '<span class="pf-label">Could not read it — try another letter</span>';
+    } finally {
+      bankUpdateUploadBtn.classList.remove('busy');
+    }
+  });
+
+  bankUpdateConfirm.addEventListener('click', () => {
+    if (!pendingMainBank) return;
+    bankProfiles.main = {
+      holder: pendingMainBank.holder,
+      bank: pendingMainBank.bank,
+      acc: pendingMainBank.acc,
+      proofName: pendingMainBank.proofName
+    };
+    try { localStorage.setItem(MAIN_BANK_KEY, JSON.stringify(bankProfiles.main)); } catch (e) {}
+    if (currentBankType === 'main') writeBankFields(bankProfiles.main);
+    closeBankUpdateModal();
+    showToast('Your main banking details have been updated.', 4500);
+  });
+
+  document.getElementById('bankUpdateClose').addEventListener('click', closeBankUpdateModal);
+  document.getElementById('bankUpdateCancel').addEventListener('click', closeBankUpdateModal);
+  bankUpdateModal.addEventListener('click', e => { if (e.target === bankUpdateModal) closeBankUpdateModal(); });
 
   bankProofBtn.addEventListener('click', () => bankProofInput.click());
   bankProofInput.addEventListener('change', () => {
