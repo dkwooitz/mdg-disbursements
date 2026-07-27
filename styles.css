@@ -415,6 +415,38 @@
     z-index: 60; pointer-events: none;
   }
   .km-flag-badge:hover::after { opacity: 1; visibility: visible; transform: translateY(0); }
+  /* Badges sit in a row under the reference number when a claim raises more than one flag */
+  .flag-badges { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  /* Yellow warning: the expense is older than 90 calendar days at the date of submission */
+  .age-flag-badge {
+    position: relative;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: #e6a41e; color: #3d2a00;
+    font-size: 13px; font-weight: 800; line-height: 1;
+    cursor: help;
+  }
+  .age-flag-badge::after {
+    content: attr(data-tip);
+    position: absolute; left: 0; top: calc(100% + 8px);
+    width: 262px; padding: 10px 12px;
+    background: #fff6e0; color: #7a4f05; border: 1px solid #e0b455;
+    border-radius: 8px; box-shadow: 0 10px 26px rgba(150,100,20,.22);
+    font-size: 12px; font-weight: 500; line-height: 1.45; text-align: left;
+    opacity: 0; visibility: hidden; transform: translateY(-4px);
+    transition: opacity .15s ease, transform .15s ease;
+    z-index: 60; pointer-events: none;
+  }
+  .age-flag-badge:hover::after { opacity: 1; visibility: visible; transform: translateY(0); }
+  /* Deleted claims are retracted, not removed: greyed out but still readable and printable */
+  .history-table tr.claim-row.deleted-row td { color: var(--text-dim); }
+  .history-table tr.claim-row.deleted-row td:not(:last-child) { opacity: .55; }
+  .history-table tr.deleted-row .stepper { opacity: .45; }
+  .deleted-note {
+    background: rgba(150,150,160,.14); border: 1px solid var(--border);
+    color: var(--text-dim); border-radius: 10px; padding: 12px 16px; margin-bottom: 18px;
+    font-size: 13px; line-height: 1.5;
+  }
   /* Keep the table corners neat now that the card allows overflow */
   .history-table thead th:first-child { border-top-left-radius: 12px; }
   .history-table thead th:last-child { border-top-right-radius: 12px; }

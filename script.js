@@ -526,6 +526,44 @@
     }
   }
 
+  /* ---- Late-submission flag (policy 5.4: claim within 90 calendar days of the expense) ---- */
+  const LATE_DAYS = 90;
+
+  // "YYYY-MM-DD" from a date input, read as a local calendar date (never shifted by timezone).
+  function parseYmd(s) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || '').trim());
+    return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+  }
+  // Whole days since the epoch, ignoring time of day, so the gap counts calendar days.
+  // Line dates arrive as "YYYY-MM-DD" and are read as plain calendar dates; the submission
+  // date is a Date (or the ISO string it becomes once saved) and is read as a local date.
+  function dayNo(d) {
+    if (!d) return null;
+    const x = parseYmd(d) || new Date(d);
+    if (isNaN(x.getTime())) return null;
+    return Math.floor(Date.UTC(x.getFullYear(), x.getMonth(), x.getDate()) / 86400000);
+  }
+  // Age of a claim's OLDEST expense, measured from the day it was submitted.
+  // Deliberately measured against the submission date and not against today: once a
+  // claim is in on time it stays on time, no matter how long payment afterwards takes.
+  function claimAge(c) {
+    const submitted = dayNo(c && c.submitted);
+    if (submitted === null) return null;
+    let oldest = null, oldestDate = '';
+    [].concat((c && c.km) || [], (c && c.other) || []).forEach(r => {
+      const n = dayNo(r && r.date);
+      if (n !== null && (oldest === null || n < oldest)) { oldest = n; oldestDate = r.date; }
+    });
+    if (oldest === null) return null; // no dated expense lines — nothing to measure
+    const days = submitted - oldest;
+    return { days: days, date: oldestDate, late: days > LATE_DAYS };
+  }
+  function ageTipText(age) {
+    return 'Disbursement claim is older than 90 calendar days of the expense being incurred. '
+      + 'The oldest expense is dated ' + fmtDate(parseYmd(age.date))
+      + ' — ' + age.days + ' calendar days before this claim was submitted (policy 5.4).';
+  }
+
   async function readReceipt(file, tr, btn) {
     const dateInput = tr.querySelector('input[type=date]');
     const descInput = tr.querySelector('input[type=text]');
@@ -996,7 +1034,8 @@
     return '—';
   }
   function pillFor(status) {
-    const cls = status === 'Approved' ? 'pill-ok' : (status === 'Rejected' ? 'pill-no' : (status === 'Recalled' ? 'pill-recalled' : 'pill-wait'));
+    const grey = status === 'Recalled' || status === 'Deleted';
+    const cls = status === 'Approved' ? 'pill-ok' : (status === 'Rejected' ? 'pill-no' : (grey ? 'pill-recalled' : 'pill-wait'));
     return '<span class="pill ' + cls + '">' + status + '</span>';
   }
 
@@ -1019,24 +1058,40 @@
     }
     sorted.forEach(c => {
       const tr = document.createElement('tr');
-      tr.className = 'claim-row' + (c.ref === highlightRef ? ' row-new' : '');
-      const flagBadge = c.kmFlagged
-        ? '<span class="km-flag-badge" data-tip="The kilometers submitted are duplicate of a previous submission. Please ensure correctness of submission.">!</span>'
-        : '';
+      tr.className = 'claim-row' + (c.ref === highlightRef ? ' row-new' : '') + (c.deleted ? ' deleted-row' : '');
+
+      const badges = [];
+      if (c.kmFlagged) {
+        badges.push('<span class="km-flag-badge" data-tip="The kilometers submitted are duplicate of a previous submission. Please ensure correctness of submission.">!</span>');
+      }
+      const age = claimAge(c);
+      if (age && age.late) {
+        badges.push('<span class="age-flag-badge" data-tip="' + escapeHtml(ageTipText(age)) + '">!</span>');
+      }
+      const flagBadges = badges.length ? '<div class="flag-badges">' + badges.join('') + '</div>' : '';
+
+      // A deleted claim is retracted, not removed: its reference and record stay on file,
+      // so it keeps View and PDF and offers Restore in place of Recall/Delete.
+      const actions = c.deleted
+        ? '<button class="mini-btn" data-view="' + c.ref + '">View</button> ' +
+          '<button class="mini-btn" data-pdf="' + c.ref + '">PDF</button> ' +
+          '<button class="mini-btn" data-restore="' + c.ref + '">Restore</button>'
+        : '<button class="mini-btn" data-view="' + c.ref + '">View</button> ' +
+          '<button class="mini-btn" data-pdf="' + c.ref + '">PDF</button> ' +
+          '<button class="mini-btn" data-recall="' + c.ref + '">Recall</button> ' +
+          '<button class="mini-btn danger" data-delete="' + c.ref + '">Delete</button>';
+
       tr.innerHTML =
-        '<td class="ref"><div class="ref-wrap"><span class="ref-no">' + c.ref + '</span>' + flagBadge + '</div></td>' +
+        '<td class="ref"><div class="ref-wrap"><span class="ref-no">' + c.ref + '</span>' + flagBadges + '</div></td>' +
         '<td>' + fmtDate(c.submitted) + '</td>' +
         '<td>' + typeLabel(c) + '</td>' +
         '<td style="text-align:right">' + money.format(c.grandTotal) + '</td>' +
         '<td>' + pillFor(c.status) + '</td>' +
-        '<td style="text-align:right"><button class="mini-btn" data-view="' + c.ref + '">View</button> ' +
-          '<button class="mini-btn" data-pdf="' + c.ref + '">PDF</button> ' +
-          '<button class="mini-btn" data-recall="' + c.ref + '">Recall</button> ' +
-          '<button class="mini-btn danger" data-delete="' + c.ref + '">Delete</button></td>';
+        '<td style="text-align:right">' + actions + '</td>';
       tb.appendChild(tr);
 
       const pr = document.createElement('tr');
-      pr.className = 'progress-row';
+      pr.className = 'progress-row' + (c.deleted ? ' deleted-row' : '');
       pr.innerHTML = '<td colspan="6">' + stepperHtml(typeof c.stage === 'number' ? c.stage : 1) + '</td>';
       tb.appendChild(pr);
     });
@@ -1044,6 +1099,7 @@
     tb.querySelectorAll('[data-pdf]').forEach(b => b.addEventListener('click', () => generatePDF(claims.find(x => x.ref === b.dataset.pdf))));
     tb.querySelectorAll('[data-recall]').forEach(b => b.addEventListener('click', () => recallClaim(b.dataset.recall)));
     tb.querySelectorAll('[data-delete]').forEach(b => b.addEventListener('click', () => deleteClaim(b.dataset.delete)));
+    tb.querySelectorAll('[data-restore]').forEach(b => b.addEventListener('click', () => restoreClaim(b.dataset.restore)));
   }
 
   // ---- Recall: reopen a claim into New Claim for editing (progress is preserved) ----
@@ -1124,6 +1180,7 @@
   function recallClaim(ref) {
     const c = claims.find(x => x.ref === ref);
     if (!c) return;
+    if (c.deleted) { showToast('Disbursement ' + ref + ' was deleted. Restore it first to edit it.', 4500); return; }
     populateForm(c);
     startEdit(ref, c.banking.proofName);
     if (submitMsg) { submitMsg.textContent = ''; submitMsg.className = 'submit-msg'; }
@@ -1131,16 +1188,39 @@
     showToast('Disbursement ' + ref + ' reopened for editing. Its progress is unchanged.', 5000);
   }
 
+  // ---- Delete: retract the disbursement, never remove it ----
+  // Reference numbers may not go missing from the sequence, so a deleted claim is greyed
+  // out and pulled back from the HOD while the record stays on file for audit.
   function deleteClaim(ref) {
-    showConfirm('Are you sure that you want to delete this submitted disbursement? Once deleted, it cannot be retrieved.', () => {
-      const i = claims.findIndex(x => x.ref === ref);
-      if (i >= 0) claims.splice(i, 1);
+    const c = claims.find(x => x.ref === ref);
+    if (!c || c.deleted) return;
+    showConfirm('Delete disbursement ' + ref + '? It will be retracted from the HOD and greyed out. '
+      + 'The record and its reference number are kept on file for audit, and you can still view it or restore it.', () => {
+      c.deleted = true;
+      c.deletedAt = new Date();
+      c.statusBefore = c.status;
+      c.stageBefore = typeof c.stage === 'number' ? c.stage : 1;
+      c.status = 'Deleted';
+      c.stage = 0; // retracted — back to "filled in", no longer with the HOD
       if (editingRef === ref) { endEdit(); resetForm(); }
-      recomputeKmFlags();
       renderPrev();
       saveClaims();
-      showToast('Disbursement ' + ref + ' deleted.', 4000);
+      showToast('Disbursement ' + ref + ' deleted and retracted from the HOD. The record stays on file for audit.', 5500);
     });
+  }
+
+  function restoreClaim(ref) {
+    const c = claims.find(x => x.ref === ref);
+    if (!c || !c.deleted) return;
+    showConfirm('Restore disbursement ' + ref + '? It goes back to the HOD at the stage it had reached.', () => {
+      c.deleted = false;
+      c.status = c.statusBefore || 'Pending HOD';
+      c.stage = typeof c.stageBefore === 'number' ? c.stageBefore : 1;
+      delete c.deletedAt; delete c.statusBefore; delete c.stageBefore;
+      renderPrev(ref);
+      saveClaims();
+      showToast('Disbursement ' + ref + ' restored and submitted to the HOD again.', 4500);
+    }, { okText: 'Restore', okClass: 'btn-primary' });
   }
 
   function collectClaim() {
@@ -1218,7 +1298,13 @@
 
   function row2(a, b) { return '<tr><th>' + a + '</th><td>' + (b || '—') + '</td></tr>'; }
   function buildDetail(c) {
-    let h = '<table class="detail-kv">' +
+    let h = '';
+    if (c.deleted) {
+      h += '<div class="deleted-note">Deleted on ' + fmtDateTime(c.deletedAt || c.submitted) +
+        '. This disbursement has been retracted from the HOD and will not be paid. It is kept on file, '
+        + 'with its reference number, for audit purposes.</div>';
+    }
+    h += '<table class="detail-kv">' +
       row2('Employee', fullName(c.employee)) +
       row2('Employee number', c.employee.number) +
       row2('Email', c.employee.email) + row2('Site', c.employee.site) +
@@ -1244,6 +1330,11 @@
       '<tr class="tot"><th>Grand total</th><td>' + money.format(c.grandTotal) + '</td></tr></table>';
     if (c.kmFlagged) {
       h += '<div class="km-flag" style="margin-top:18px;">The kilometres and/or route on this claim reflect a previous disbursement. Please ensure the accuracy and integrity of this disbursement.</div>';
+    }
+    const age = claimAge(c);
+    if (age && age.late) {
+      h += '<div class="km-flag" style="margin-top:18px;">' + escapeHtml(ageTipText(age)) +
+        ' Late submissions may be declined unless exceptional circumstances are justified and approved by a senior manager.</div>';
     }
     return h;
   }
@@ -1395,11 +1486,26 @@
       margin: { left: M, right: M }
     });
 
+    const notes = [];
     if (c.kmFlagged) {
+      notes.push('Note: The kilometres and/or route on this claim reflect a previous disbursement. Please ensure the accuracy and integrity of this disbursement.');
+    }
+    const pdfAge = claimAge(c);
+    if (pdfAge && pdfAge.late) {
+      notes.push('Note: ' + ageTipText(pdfAge) + ' Late submissions may be declined unless exceptional circumstances are justified and approved by a senior manager.');
+    }
+    if (c.deleted) {
+      notes.push('Note: This disbursement was deleted on ' + fmtDateTime(c.deletedAt || c.submitted)
+        + ' and retracted from the HOD. It will not be paid. The record is retained for audit purposes.');
+    }
+    if (notes.length) {
       y = doc.lastAutoTable.finalY + 16;
       doc.setFont('helvetica', 'italic'); doc.setFontSize(8.5); doc.setTextColor(150, 100, 20);
-      const note = 'Note: The kilometres and/or route on this claim reflect a previous disbursement. Please ensure the accuracy and integrity of this disbursement.';
-      doc.text(doc.splitTextToSize(note, pageW - 2 * M), M, y);
+      notes.forEach(note => {
+        const lines = doc.splitTextToSize(note, pageW - 2 * M);
+        doc.text(lines, M, y);
+        y += lines.length * 11 + 6;
+      });
       doc.setTextColor(0, 0, 0); doc.setFont('helvetica', 'normal');
     }
 
