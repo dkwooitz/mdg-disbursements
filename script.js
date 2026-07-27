@@ -657,17 +657,28 @@
   const bankProofBtn = document.getElementById('bankProofBtn');
 
   /* ---- Main vs Other banking details ----
-     "Main" is remembered on this device between sessions; "Other" is used for a single
-     claim and is not stored. The AI letter reader works with whichever is selected. */
+     "Main" is the employee's remembered default account (persisted on this device and
+     reloaded at login). "Other" is a one-off account for a single claim. Both are kept in
+     memory during a session so switching between them never loses what was typed. The
+     persisted Main only changes deliberately, via the "Update banking details" button.
+     The AI letter reader works with whichever option is selected. */
   const bankTypeSel = document.getElementById('bankType');
   const bankHolderEl = document.getElementById('bankHolder');
   const bankNameEl = document.getElementById('bankName');
   const bankAccEl = document.getElementById('bankAcc');
   const bankTypeHint = document.getElementById('bankTypeHint');
+  const updateBankBtn = document.getElementById('updateBankBtn');
   const MAIN_BANK_KEY = 'mdg-bank-main';
 
-  let bankOther = { holder: '', bank: '', acc: '', proofName: '' };
+  const blankBank = () => ({ holder: '', bank: '', acc: '', proofName: '' });
   let currentBankType = 'main';
+
+  function loadMainBank() {
+    try { return JSON.parse(localStorage.getItem(MAIN_BANK_KEY) || 'null') || blankBank(); }
+    catch (e) { return blankBank(); }
+  }
+  // Session copies so toggling Main/Other doesn't discard in-progress edits.
+  const bankProfiles = { main: loadMainBank(), other: blankBank() };
 
   function readBankFields() {
     return {
@@ -675,10 +686,11 @@
       bank: bankNameEl.value,
       acc: bankAccEl.value.trim(),
       proofName: (bankProofInput.files && bankProofInput.files[0]) ? bankProofInput.files[0].name
-                 : (bankProofBtn.classList.contains('has-file') ? (bankProofBtn.querySelector('.pf-label') || {}).textContent || '' : '')
+                 : (bankProofBtn.classList.contains('has-file') ? ((bankProofBtn.querySelector('.pf-label') || {}).textContent || '') : '')
     };
   }
   function writeBankFields(d) {
+    d = d || blankBank();
     bankHolderEl.value = d.holder || '';
     bankNameEl.value = d.bank || '';
     bankAccEl.value = d.acc || '';
@@ -693,36 +705,40 @@
     }
     [bankHolderEl, bankNameEl, bankAccEl].forEach(el => el.classList.remove('field-error'));
   }
-  function loadMainBank() {
-    try { return JSON.parse(localStorage.getItem(MAIN_BANK_KEY) || 'null') || { holder: '', bank: '', acc: '', proofName: '' }; }
-    catch (e) { return { holder: '', bank: '', acc: '', proofName: '' }; }
-  }
-  function saveMainBank() {
-    if (currentBankType !== 'main') return;
-    try { localStorage.setItem(MAIN_BANK_KEY, JSON.stringify(readBankFields())); } catch (e) {}
+  // Persist the details currently on screen as the employee's remembered Main account.
+  function commitMainBank() {
+    const d = readBankFields();
+    bankProfiles.main = d;
+    try { localStorage.setItem(MAIN_BANK_KEY, JSON.stringify(d)); } catch (e) {}
   }
   function updateBankHint() {
     if (!bankTypeHint) return;
     bankTypeHint.innerHTML = currentBankType === 'main'
-      ? 'Your main banking details are saved and will be filled in automatically next time you log in.'
-      : 'These details are used for <strong>this claim only</strong> and will not be saved. Your main details stay as they are.';
+      ? 'These are your remembered banking details and are filled in automatically each time you log in. Use “Update banking details” to change them.'
+      : 'These details are for <strong>this claim only</strong> and are not saved. Use “Update banking details” to make them your remembered main account.';
+    if (updateBankBtn) updateBankBtn.textContent = 'Update banking details';
   }
 
   if (bankTypeSel) {
     bankTypeSel.addEventListener('change', () => {
-      // stash what's on screen under the type we're leaving
-      if (currentBankType === 'main') saveMainBank(); else bankOther = readBankFields();
+      bankProfiles[currentBankType] = readBankFields(); // remember what was on screen
       currentBankType = bankTypeSel.value;
-      writeBankFields(currentBankType === 'main' ? loadMainBank() : bankOther);
+      writeBankFields(bankProfiles[currentBankType]);
       updateBankHint();
     });
   }
-  // Keep the main profile up to date as it's typed
-  [bankHolderEl, bankNameEl, bankAccEl].forEach(el => {
-    if (!el) return;
-    el.addEventListener('input', saveMainBank);
-    el.addEventListener('change', saveMainBank);
-  });
+
+  if (updateBankBtn) {
+    updateBankBtn.addEventListener('click', () => {
+      const msg = currentBankType === 'other'
+        ? 'Are you sure that you want to update your banking details? Please ensure that the information is correct once the changes are accepted.'
+        : 'You are about to update your main banking details. Are you certain that you would like to do this? If accepted, please ensure that the information is correct.';
+      showConfirm(msg, () => {
+        commitMainBank();
+        showToast('Your main banking details have been updated.', 4500);
+      }, { okText: 'Confirm', okClass: 'btn-primary' });
+    });
+  }
 
   bankProofBtn.addEventListener('click', () => bankProofInput.click());
   bankProofInput.addEventListener('change', () => {
@@ -776,8 +792,7 @@
       }
       if (parsed.accountNumber) acc.value = String(parsed.accountNumber);
       [holder, bank, acc].forEach(el => { if (el.value) el.classList.remove('field-error'); });
-      // Remember the newly-read details if these are the employee's main account.
-      if (currentBankType === 'main') saveMainBank(); else bankOther = readBankFields();
+      bankProfiles[currentBankType] = readBankFields(); // keep the session copy in step
     } catch (e) {
       /* leave fields for manual entry */
     } finally {
@@ -1089,8 +1104,9 @@
     // Return to the saved main banking profile for the next claim.
     currentBankType = 'main';
     if (bankTypeSel) bankTypeSel.value = 'main';
-    bankOther = { holder: '', bank: '', acc: '', proofName: '' };
-    writeBankFields(loadMainBank());
+    bankProfiles.main = loadMainBank();
+    bankProfiles.other = blankBank();
+    writeBankFields(bankProfiles.main);
     updateBankHint();
     recalc();
   }
@@ -1155,8 +1171,12 @@
   /* ---- Confirmation dialog ---- */
   const confirmModal = document.getElementById('confirmModal');
   let confirmCb = null;
-  function showConfirm(message, onConfirm) {
+  function showConfirm(message, onConfirm, opts) {
+    opts = opts || {};
     document.getElementById('confirmMsg').textContent = message;
+    const ok = document.getElementById('confirmOk');
+    ok.textContent = opts.okText || 'Delete';
+    ok.className = 'btn ' + (opts.okClass || 'btn-delete');
     confirmCb = onConfirm;
     confirmModal.classList.remove('hidden');
   }
@@ -1493,7 +1513,7 @@
   // load any saved admin config, then build the dependent UI
   loadConfig();
   applySessionUser();
-  writeBankFields(loadMainBank());
+  writeBankFields(bankProfiles.main);
   updateBankHint();
   initSiteCombo();
   renderContacts();
