@@ -451,7 +451,22 @@
     const desc = (p.description || '').toLowerCase().replace(/\s+/g, ' ').trim();
     return [p.date || '', (isNaN(amt) ? '' : amt.toFixed(2)), (p.currency || '').toUpperCase(), desc].join('|');
   }
-  // Is this receipt fingerprint already used on another line or a previous claim?
+  // A retracted claim is not a live claim: nothing was paid on it, so it holds no receipts
+  // and blocks nothing. That lets an employee delete a claim they got wrong and rebuild it
+  // from the same slips. Every claim still standing keeps its receipts locked.
+  function liveClaims() { return claims.filter(c => !c.deleted); }
+  // Does a receipt fingerprint appear on a live claim other than this one?
+  function receiptHolder(fp, exceptRef) {
+    for (const c of liveClaims()) {
+      if (exceptRef && c.ref === exceptRef) continue;
+      for (const it of (c.other || [])) {
+        if (fp.hash && it.hash && it.hash === fp.hash) return c.ref;
+        if (fp.sig && it.sig && it.sig === fp.sig) return c.ref;
+      }
+    }
+    return '';
+  }
+  // Is this receipt fingerprint already used on another line or a live previous claim?
   function isReceiptUsed(fp, exceptTr) {
     const rows = otherBody.querySelectorAll('tr');
     for (const r of rows) {
@@ -459,14 +474,7 @@
       if (fp.hash && r.dataset.fileHash === fp.hash) return true;
       if (fp.sig && r.dataset.sig && r.dataset.sig === fp.sig) return true;
     }
-    for (const c of claims) {
-      if (editingRef && c.ref === editingRef) continue;
-      for (const it of (c.other || [])) {
-        if (fp.hash && it.hash && it.hash === fp.hash) return true;
-        if (fp.sig && it.sig && it.sig === fp.sig) return true;
-      }
-    }
-    return false;
+    return !!receiptHolder(fp, editingRef);
   }
   const receiptProofSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-2-1.3-2 1.3-2-1.3-2 1.3-2-1.3L6 21z"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="9" y1="12" x2="15" y2="12"/></svg>';
   function rejectReceipt(tr, btn, msg) {
@@ -494,7 +502,7 @@
     for (const r of (kmList || [])) {
       const sig = kmSig(r);
       if (!sig) continue;
-      for (const c of claims) {
+      for (const c of liveClaims()) {
         if (exceptRef && c.ref === exceptRef) continue;
         for (const it of (c.km || [])) {
           if (kmSig(it) === sig) return true;
@@ -517,10 +525,12 @@
     return false;
   }
   // Recompute every claim's flag so only a claim that repeats an EARLIER one stays flagged.
+  // Retracted claims neither carry a flag nor raise one on the claims that follow them.
   function recomputeKmFlags() {
     const inOrder = claims.slice().sort((a, b) => new Date(a.submitted) - new Date(b.submitted));
     const seen = [];
     for (const c of inOrder) {
+      if (c.deleted) { c.kmFlagged = false; continue; }
       c.kmFlagged = kmMatchesList(c.km, seen);
       seen.push(c);
     }
@@ -984,9 +994,9 @@
       resetForm();
       showView('previous');
     } else {
-      // Whole-disbursement duplicate check
+      // Whole-disbursement duplicate check (retracted claims are not in the running)
       const sig = claimSig(data);
-      const dup = claims.find(c => claimSig(c) === sig);
+      const dup = liveClaims().find(c => claimSig(c) === sig);
       if (dup) {
         submitMsg.textContent = 'This disbursement is identical to ' + dup.ref + ', which has already been submitted. Duplicate submissions are not allowed.';
         submitMsg.className = 'submit-msg err';
@@ -1024,7 +1034,45 @@
   function fmtDate(d)     { return new Date(d).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }); }
   function fullName(e)    { return [(e && e.name) || '', (e && e.surname) || ''].filter(Boolean).join(' ').trim(); }
   function fmtDateTime(d) { return new Date(d).toLocaleString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
-  function newRef() { return 'DSB-' + new Date().getFullYear() + '-' + String(refSeq++).padStart(4, '0'); }
+  /* ---- Reference numbers ----
+     The sequential part counts per browser, so on its own it would hand two employees the
+     same number. Each reference therefore carries a suffix built from the moment it was
+     created plus two random characters, which makes it unique across devices while the
+     DSB-YYYY-NNNN part stays readable. The alphabet leaves out 0/O and 1/I so a reference
+     can be read off a printed claim or repeated over the phone without ambiguity. */
+  const REF_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'; // 32 unambiguous characters
+  const REF_EPOCH = Date.UTC(2026, 0, 1); // counting from the project's first year keeps the suffix short
+
+  function refEncode(n) {
+    let out = '';
+    n = Math.max(0, Math.floor(n));
+    do {
+      out = REF_ALPHABET[n % REF_ALPHABET.length] + out;
+      n = Math.floor(n / REF_ALPHABET.length);
+    } while (n > 0);
+    return out;
+  }
+  function refRandom(len) {
+    // 256 divides evenly by 32, so the modulo below draws each character with equal odds.
+    const bytes = (window.crypto && window.crypto.getRandomValues)
+      ? window.crypto.getRandomValues(new Uint8Array(len)) : null;
+    let out = '';
+    for (let i = 0; i < len; i++) {
+      const n = bytes ? bytes[i] : Math.floor(Math.random() * 256);
+      out += REF_ALPHABET[n % REF_ALPHABET.length];
+    }
+    return out;
+  }
+  function newRef() {
+    const seq = String(refSeq++).padStart(4, '0'); // taken once: retries must not burn numbers
+    const stem = 'DSB-' + new Date().getFullYear() + '-' + seq + '-';
+    for (let tries = 0; tries < 50; tries++) {
+      const ref = stem + refEncode(Date.now() - REF_EPOCH) + refRandom(2);
+      if (!claims.some(c => c.ref === ref)) return ref;
+    }
+    // Never reached in practice — take a longer random tail rather than return a duplicate.
+    return stem + refEncode(Date.now() - REF_EPOCH) + refRandom(6);
+  }
 
   function typeLabel(c) {
     const k = c.kmTotal > 0, o = c.otherTotal > 0;
@@ -1038,6 +1086,16 @@
     const cls = status === 'Approved' ? 'pill-ok' : (status === 'Rejected' ? 'pill-no' : (grey ? 'pill-recalled' : 'pill-wait'));
     return '<span class="pill ' + cls + '">' + status + '</span>';
   }
+
+  // Once the HOD has approved it, a disbursement is out of the employee's hands: it can no
+  // longer be recalled for editing or deleted, so what Finance pays out is what was approved.
+  function isHodApproved(c) {
+    if (!c || c.deleted) return false;
+    const s = (c.status || '').toLowerCase();
+    if (s === 'approved' || s === 'paid') return true;
+    return typeof c.stage === 'number' && c.stage >= 2; // with payments, or already paid
+  }
+  const LOCKED_TIP = 'Approved by the HOD — this disbursement can no longer be recalled or deleted.';
 
   const STEPS = ['Filled in disbursement', 'Submitted to HOD', 'Submitted for payment', 'Disbursement paid'];
   function stepperHtml(stage) {
@@ -1071,15 +1129,17 @@
       const flagBadges = badges.length ? '<div class="flag-badges">' + badges.join('') + '</div>' : '';
 
       // A deleted claim is retracted, not removed: its reference and record stay on file,
-      // so it keeps View and PDF and offers Restore in place of Recall/Delete.
+      // so it keeps View and PDF and offers Restore in place of Recall/Delete. An approved
+      // claim keeps both buttons, greyed out, so it is clear why they can no longer be used.
+      const open = '<button class="mini-btn" data-view="' + c.ref + '">View</button> ' +
+        '<button class="mini-btn" data-pdf="' + c.ref + '">PDF</button> ';
       const actions = c.deleted
-        ? '<button class="mini-btn" data-view="' + c.ref + '">View</button> ' +
-          '<button class="mini-btn" data-pdf="' + c.ref + '">PDF</button> ' +
-          '<button class="mini-btn" data-restore="' + c.ref + '">Restore</button>'
-        : '<button class="mini-btn" data-view="' + c.ref + '">View</button> ' +
-          '<button class="mini-btn" data-pdf="' + c.ref + '">PDF</button> ' +
-          '<button class="mini-btn" data-recall="' + c.ref + '">Recall</button> ' +
-          '<button class="mini-btn danger" data-delete="' + c.ref + '">Delete</button>';
+        ? open + '<button class="mini-btn" data-restore="' + c.ref + '">Restore</button>'
+        : isHodApproved(c)
+          ? open + '<button class="mini-btn" disabled title="' + LOCKED_TIP + '">Recall</button> ' +
+            '<button class="mini-btn" disabled title="' + LOCKED_TIP + '">Delete</button>'
+          : open + '<button class="mini-btn" data-recall="' + c.ref + '">Recall</button> ' +
+            '<button class="mini-btn danger" data-delete="' + c.ref + '">Delete</button>';
 
       tr.innerHTML =
         '<td class="ref"><div class="ref-wrap"><span class="ref-no">' + c.ref + '</span>' + flagBadges + '</div></td>' +
@@ -1181,6 +1241,7 @@
     const c = claims.find(x => x.ref === ref);
     if (!c) return;
     if (c.deleted) { showToast('Disbursement ' + ref + ' was deleted. Restore it first to edit it.', 4500); return; }
+    if (isHodApproved(c)) { showToast('Disbursement ' + ref + ' has been approved by the HOD and can no longer be recalled.', 5000); return; }
     populateForm(c);
     startEdit(ref, c.banking.proofName);
     if (submitMsg) { submitMsg.textContent = ''; submitMsg.className = 'submit-msg'; }
@@ -1194,8 +1255,13 @@
   function deleteClaim(ref) {
     const c = claims.find(x => x.ref === ref);
     if (!c || c.deleted) return;
+    if (isHodApproved(c)) {
+      showToast('Disbursement ' + ref + ' has been approved by the HOD and can no longer be deleted.', 5000);
+      return;
+    }
     showConfirm('Delete disbursement ' + ref + '? It will be retracted from the HOD and greyed out. '
-      + 'The record and its reference number are kept on file for audit, and you can still view it or restore it.', () => {
+      + 'The record and its reference number are kept on file for audit, and the receipts on it are released '
+      + 'so you can use them again on a corrected claim.', () => {
       c.deleted = true;
       c.deletedAt = new Date();
       c.statusBefore = c.status;
@@ -1203,20 +1269,37 @@
       c.status = 'Deleted';
       c.stage = 0; // retracted — back to "filled in", no longer with the HOD
       if (editingRef === ref) { endEdit(); resetForm(); }
+      recomputeKmFlags();
       renderPrev();
       saveClaims();
-      showToast('Disbursement ' + ref + ' deleted and retracted from the HOD. The record stays on file for audit.', 5500);
+      showToast('Disbursement ' + ref + ' deleted and retracted from the HOD. Its receipts are free to use again; the record stays on file for audit.', 6500);
     });
+  }
+
+  // A restore may not resurrect a receipt that has since been claimed on a live disbursement —
+  // that would put the same slip on two standing claims.
+  function restoreConflict(c) {
+    for (const it of (c.other || [])) {
+      const holder = receiptHolder({ hash: it.hash, sig: it.sig }, c.ref);
+      if (holder) return holder;
+    }
+    return '';
   }
 
   function restoreClaim(ref) {
     const c = claims.find(x => x.ref === ref);
     if (!c || !c.deleted) return;
-    showConfirm('Restore disbursement ' + ref + '? It goes back to the HOD at the stage it had reached.', () => {
+    const clash = restoreConflict(c);
+    if (clash) {
+      showToast('Disbursement ' + ref + ' cannot be restored: a receipt on it has since been claimed on ' + clash + '. Delete that claim first if it was the mistaken one.', 8000);
+      return;
+    }
+    showConfirm('Restore disbursement ' + ref + '? It goes back to the HOD at the stage it had reached, and its receipts are locked to it again.', () => {
       c.deleted = false;
       c.status = c.statusBefore || 'Pending HOD';
       c.stage = typeof c.stageBefore === 'number' ? c.stageBefore : 1;
       delete c.deletedAt; delete c.statusBefore; delete c.stageBefore;
+      recomputeKmFlags();
       renderPrev(ref);
       saveClaims();
       showToast('Disbursement ' + ref + ' restored and submitted to the HOD again.', 4500);
@@ -1302,7 +1385,8 @@
     if (c.deleted) {
       h += '<div class="deleted-note">Deleted on ' + fmtDateTime(c.deletedAt || c.submitted) +
         '. This disbursement has been retracted from the HOD and will not be paid. It is kept on file, '
-        + 'with its reference number, for audit purposes.</div>';
+        + 'with its reference number, for audit purposes. The receipts on it have been released and may be '
+        + 'claimed again on a corrected disbursement.</div>';
     }
     h += '<table class="detail-kv">' +
       row2('Employee', fullName(c.employee)) +

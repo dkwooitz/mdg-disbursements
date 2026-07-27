@@ -395,6 +395,8 @@
   }
   .km-flag.hidden { display: none; }
   .ref-wrap { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; }
+  /* A reference must never break across lines — it is read off the page and quoted verbatim */
+  .ref-no { white-space: nowrap; }
   .km-flag-badge {
     position: relative;
     display: inline-flex; align-items: center; justify-content: center;
@@ -635,6 +637,11 @@
   }
   .mini-btn:hover { border-color: var(--accent); color: var(--accent); }
   .mini-btn.danger:hover { border-color: var(--danger); color: var(--danger); }
+  /* Approved by the HOD: Recall and Delete stay visible but can no longer be used */
+  .mini-btn:disabled, .mini-btn:disabled:hover {
+    opacity: .4; cursor: not-allowed;
+    border-color: var(--border); color: var(--text-dim);
+  }
   .pill-recalled { background: rgba(150,150,160,.18); color: var(--text-dim); }
 
   /* Confirmation dialog */
