@@ -217,7 +217,7 @@ choice remembered on the device:
 - **MDG Light**
 - **MDG Dark**
 - **Rose** (pastel pink)
-- **Lavender**
+- **Jade** (green)
 
 The Master Drilling logo keeps its blue and grey in every theme, and the header icons
 (vehicle, cash, raisebore) re-tint to match the active theme.
