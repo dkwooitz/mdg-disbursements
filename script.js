@@ -1128,13 +1128,13 @@
       }
       const flagBadges = badges.length ? '<div class="flag-badges">' + badges.join('') + '</div>' : '';
 
-      // A deleted claim is retracted, not removed: its reference and record stay on file,
-      // so it keeps View and PDF and offers Restore in place of Recall/Delete. An approved
-      // claim keeps both buttons, greyed out, so it is clear why they can no longer be used.
+      // A deleted claim is retracted, not removed: its reference and record stay on file and
+      // stay readable, but deletion is final, so it keeps only View and PDF. An approved claim
+      // keeps both buttons, greyed out, so it is clear why they can no longer be used.
       const open = '<button class="mini-btn" data-view="' + c.ref + '">View</button> ' +
         '<button class="mini-btn" data-pdf="' + c.ref + '">PDF</button> ';
       const actions = c.deleted
-        ? open + '<button class="mini-btn" data-restore="' + c.ref + '">Restore</button>'
+        ? open
         : isHodApproved(c)
           ? open + '<button class="mini-btn" disabled title="' + LOCKED_TIP + '">Recall</button> ' +
             '<button class="mini-btn" disabled title="' + LOCKED_TIP + '">Delete</button>'
@@ -1159,7 +1159,6 @@
     tb.querySelectorAll('[data-pdf]').forEach(b => b.addEventListener('click', () => generatePDF(claims.find(x => x.ref === b.dataset.pdf))));
     tb.querySelectorAll('[data-recall]').forEach(b => b.addEventListener('click', () => recallClaim(b.dataset.recall)));
     tb.querySelectorAll('[data-delete]').forEach(b => b.addEventListener('click', () => deleteClaim(b.dataset.delete)));
-    tb.querySelectorAll('[data-restore]').forEach(b => b.addEventListener('click', () => restoreClaim(b.dataset.restore)));
   }
 
   // ---- Recall: reopen a claim into New Claim for editing (progress is preserved) ----
@@ -1240,7 +1239,7 @@
   function recallClaim(ref) {
     const c = claims.find(x => x.ref === ref);
     if (!c) return;
-    if (c.deleted) { showToast('Disbursement ' + ref + ' was deleted. Restore it first to edit it.', 4500); return; }
+    if (c.deleted) { showToast('Disbursement ' + ref + ' was deleted and cannot be reopened. Its receipts are free, so submit a corrected claim as a new disbursement.', 6000); return; }
     if (isHodApproved(c)) { showToast('Disbursement ' + ref + ' has been approved by the HOD and can no longer be recalled.', 5000); return; }
     populateForm(c);
     startEdit(ref, c.banking.proofName);
@@ -1259,12 +1258,13 @@
       showToast('Disbursement ' + ref + ' has been approved by the HOD and can no longer be deleted.', 5000);
       return;
     }
-    showConfirm('Delete disbursement ' + ref + '? It will be retracted from the HOD and greyed out. '
-      + 'The record and its reference number are kept on file for audit, and the receipts on it are released '
-      + 'so you can use them again on a corrected claim.', () => {
+    showConfirm('Delete disbursement ' + ref + '? It will be retracted from the HOD and greyed out, and this '
+      + 'cannot be undone — a deleted disbursement can never be brought back. The record and its reference '
+      + 'number stay on file for audit, and the receipts on it are released, so a corrected claim must be '
+      + 'submitted as a new disbursement.', () => {
       c.deleted = true;
       c.deletedAt = new Date();
-      c.statusBefore = c.status;
+      c.statusBefore = c.status;                              // where it stood when it was pulled
       c.stageBefore = typeof c.stage === 'number' ? c.stage : 1;
       c.status = 'Deleted';
       c.stage = 0; // retracted — back to "filled in", no longer with the HOD
@@ -1272,38 +1272,8 @@
       recomputeKmFlags();
       renderPrev();
       saveClaims();
-      showToast('Disbursement ' + ref + ' deleted and retracted from the HOD. Its receipts are free to use again; the record stays on file for audit.', 6500);
+      showToast('Disbursement ' + ref + ' deleted and retracted from the HOD for good. Its receipts are free to use on a new claim; the record stays on file for audit.', 7000);
     });
-  }
-
-  // A restore may not resurrect a receipt that has since been claimed on a live disbursement —
-  // that would put the same slip on two standing claims.
-  function restoreConflict(c) {
-    for (const it of (c.other || [])) {
-      const holder = receiptHolder({ hash: it.hash, sig: it.sig }, c.ref);
-      if (holder) return holder;
-    }
-    return '';
-  }
-
-  function restoreClaim(ref) {
-    const c = claims.find(x => x.ref === ref);
-    if (!c || !c.deleted) return;
-    const clash = restoreConflict(c);
-    if (clash) {
-      showToast('Disbursement ' + ref + ' cannot be restored: a receipt on it has since been claimed on ' + clash + '. Delete that claim first if it was the mistaken one.', 8000);
-      return;
-    }
-    showConfirm('Restore disbursement ' + ref + '? It goes back to the HOD at the stage it had reached, and its receipts are locked to it again.', () => {
-      c.deleted = false;
-      c.status = c.statusBefore || 'Pending HOD';
-      c.stage = typeof c.stageBefore === 'number' ? c.stageBefore : 1;
-      delete c.deletedAt; delete c.statusBefore; delete c.stageBefore;
-      recomputeKmFlags();
-      renderPrev(ref);
-      saveClaims();
-      showToast('Disbursement ' + ref + ' restored and submitted to the HOD again.', 4500);
-    }, { okText: 'Restore', okClass: 'btn-primary' });
   }
 
   function collectClaim() {
@@ -1384,9 +1354,9 @@
     let h = '';
     if (c.deleted) {
       h += '<div class="deleted-note">Deleted on ' + fmtDateTime(c.deletedAt || c.submitted) +
-        '. This disbursement has been retracted from the HOD and will not be paid. It is kept on file, '
-        + 'with its reference number, for audit purposes. The receipts on it have been released and may be '
-        + 'claimed again on a corrected disbursement.</div>';
+        '. This disbursement has been retracted from the HOD and will not be paid. It cannot be reopened or '
+        + 'restored. It is kept on file, with its reference number, for audit purposes. The receipts on it '
+        + 'have been released and may be claimed again on a new disbursement.</div>';
     }
     h += '<table class="detail-kv">' +
       row2('Employee', fullName(c.employee)) +
