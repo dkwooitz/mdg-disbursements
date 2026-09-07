@@ -692,7 +692,8 @@
     function filter(q) {
       q = q.trim().toLowerCase();
       const src = q ? MACHINES.filter(m => m.toLowerCase().includes(q)) : MACHINES;
-      return src.slice(0, 50);
+      // No cap: the whole list must be reachable by scrolling, not only by typing.
+      return src;
     }
     function render() {
       shown = filter(input.value);
@@ -1803,8 +1804,23 @@
     }
     if (Array.isArray(cfg.contacts) && cfg.contacts.length) CONTACTS = cfg.contacts.map(c => Object.assign({}, c));
     if (typeof cfg.kmRate === 'number' && cfg.kmRate > 0) KM_RATE = cfg.kmRate;
-    saveConfig(); // re-save under the current version
+    sortSites(); sortMachines();
+    saveConfig(); // re-save under the current version, in order
   }
+  /* ---- Ordering ----
+     Both lists are shown alphabetically so they can be found by scrolling, not only by
+     typing. Numeric-aware, so SBS-ETUN-00005 comes before SBS-ETUN-00016. Overheads stays
+     pinned at the top of the machines: it is the default when a claim has no machine. */
+  const byName = (a, b) => String(a).localeCompare(String(b), 'en', { numeric: true, sensitivity: 'base' });
+  function sortSites() { SITES.sort(byName); }
+  function sortMachines() {
+    MACHINES.sort((a, b) => {
+      const ao = String(a).toLowerCase() === 'overheads', bo = String(b).toLowerCase() === 'overheads';
+      if (ao !== bo) return ao ? -1 : 1;
+      return byName(a, b);
+    });
+  }
+
   function saveConfig() {
     try { localStorage.setItem('mdg-config', JSON.stringify({ version: CONFIG_VERSION, sites: SITES, machines: MACHINES, contacts: CONTACTS, kmRate: KM_RATE })); } catch (e) {}
   }
@@ -1848,7 +1864,8 @@
     function filter(q) {
       q = q.trim().toLowerCase();
       const src = q ? SITES.filter(s => s.toLowerCase().includes(q)) : SITES;
-      return src.slice(0, 50);
+      // No cap: the whole list must be reachable by scrolling, not only by typing.
+      return src;
     }
     function render() {
       shown = filter(input.value);
@@ -1927,7 +1944,7 @@
       const v = inp.value.trim();
       if (!v) return;
       if (SITES.some(s => s.toLowerCase() === v.toLowerCase())) { adminFlash('“' + v + '” is already in the sites list.', true); return; }
-      SITES.push(v); saveConfig(); renderAdminSites(); inp.value = ''; inp.focus();
+      SITES.push(v); sortSites(); saveConfig(); renderAdminSites(); inp.value = ''; inp.focus();
     });
 
     const addMachineBtn = document.getElementById('addMachine');
@@ -1936,7 +1953,7 @@
       const v = inp.value.trim();
       if (!v) return;
       if (MACHINES.some(m => m.toLowerCase() === v.toLowerCase())) { adminFlash('“' + v + '” is already in the machines list.', true); return; }
-      MACHINES.push(v); saveConfig(); renderAdminMachines(document.getElementById('machineFilter').value); inp.value = ''; inp.focus();
+      MACHINES.push(v); sortMachines(); saveConfig(); renderAdminMachines(document.getElementById('machineFilter').value); inp.value = ''; inp.focus();
     });
 
     const filter = document.getElementById('machineFilter');
