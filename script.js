@@ -691,7 +691,8 @@
 
     function filter(q) {
       q = q.trim().toLowerCase();
-      const src = q ? MACHINES.filter(m => m.toLowerCase().includes(q)) : MACHINES;
+      const all = withNA(MACHINES);
+      const src = q ? all.filter(m => m.toLowerCase().includes(q)) : all;
       // No cap: the whole list must be reachable by scrolling, not only by typing.
       return src;
     }
@@ -729,7 +730,7 @@
     input.addEventListener('blur', () => {
       setTimeout(() => {
         list.classList.add('hidden');
-        if (input.value && !MACHINES.includes(input.value)) input.value = '';
+        if (input.value && withNA(MACHINES).indexOf(input.value) === -1) input.value = '';
       }, 150);
     });
   })();
@@ -1963,6 +1964,12 @@
      Both lists are shown alphabetically so they can be found by scrolling, not only by
      typing. Numeric-aware, so SBS-ETUN-00005 comes before SBS-ETUN-00016. Overheads stays
      pinned at the top of the machines: it is the default when a claim has no machine. */
+  // "N/A" heads the machine, project and cost centre lists: a claim may genuinely have
+  // none of them. It is offered by the dropdowns but never stored in the lists themselves,
+  // so it cannot be sorted away, saved into the config or deleted from the Admin page.
+  const NA = "N/A";
+  function withNA(list) { return [NA].concat(list); }
+
   const byName = (a, b) => String(a).localeCompare(String(b), 'en', { numeric: true, sensitivity: 'base' });
   function sortSites() { SITES.sort(byName); }
   function sortProjects() { PROJECTS.sort(byName); }
@@ -2018,7 +2025,7 @@
     let activeIdx = -1;
     function render() {
       const q = input.value.trim().toLowerCase();
-      const items = getItems();
+      const items = withNA(getItems());
       shown = q ? items.filter(p => p.toLowerCase().includes(q)) : items;
       activeIdx = -1;
       list.innerHTML = shown.length
@@ -2051,7 +2058,7 @@
       setTimeout(() => {
         list.classList.add('hidden');
         // Blank is allowed; anything that is not on the list is not.
-        if (input.value && getItems().indexOf(input.value) === -1) input.value = '';
+        if (input.value && withNA(getItems()).indexOf(input.value) === -1) input.value = '';
       }, 150);
     });
   }
