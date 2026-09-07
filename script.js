@@ -684,7 +684,7 @@
     return { days: days, date: oldestDate, late: days > LATE_DAYS };
   }
   function ageTipText(age) {
-    return 'Disbursements claimed is older than 90 days of the expense being incurred. '
+    return 'Disbursements claimed are older than 90 days of the expense being incurred. '
       + 'The oldest expense is dated ' + fmtDate(parseYmd(age.date))
       + ' — ' + age.days + ' calendar days before this claim was submitted (policy 5.4).';
   }
