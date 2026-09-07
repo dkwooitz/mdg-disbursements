@@ -281,6 +281,11 @@
     document.getElementById('sum-other').textContent = money.format(other);
     document.getElementById('sum-grand').textContent = money.format(km + other);
 
+    // Tell the employee the moment the claim crosses the materiality limit, while they can
+    // still see what pushed it over, rather than only once it has been submitted.
+    const matFlag = document.getElementById('materialFlag');
+    if (matFlag) matFlag.classList.toggle('hidden', !((km + other) > MATERIAL_LIMIT));
+
     updateKmFlag();
   }
 
@@ -1006,8 +1011,10 @@
       claims.unshift(data);
       renderPrev(data.ref);
       saveClaims();
-      submitMsg.textContent = 'Claim ' + data.ref + ' submitted — it now appears under Previous Claims.';
+      submitMsg.textContent = 'Claim ' + data.ref + ' submitted — it now appears under Previous Claims.'
+        + (isMaterial(data) ? ' It is a material disbursement, so it goes to your HOD and then to the CFO for approval.' : '');
       submitMsg.className = 'submit-msg ok';
+      if (isMaterial(data)) showToast(materialTipText(), 8000);
       resetForm();
       showView('previous');
     }
@@ -1087,20 +1094,38 @@
     return '<span class="pill ' + cls + '">' + status + '</span>';
   }
 
+  /* ---- Materiality: a large disbursement needs the CFO as well as the HOD ----
+     Above the limit a claim is material, and its approval route gains a CFO step after the
+     HOD. The routing itself is not built yet — no approval flow exists — so for now the
+     app detects it, says so, and shows the longer route on the claim's progress. */
+  const MATERIAL_LIMIT = 10000; // rand, excluding
+  function isMaterial(c) { return !!c && +c.grandTotal > MATERIAL_LIMIT; }
+  function materialTipText() {
+    return 'Material disbursement — above ' + money.format(MATERIAL_LIMIT) + '. It must be approved by '
+      + 'your HOD and by the CFO before it can be paid.';
+  }
+
+  const STEPS = ['Filled in disbursement', 'Submitted to HOD', 'Submitted for payment', 'Disbursement paid'];
+  const STEPS_MATERIAL = ['Filled in disbursement', 'Submitted to HOD', 'Approved by CFO', 'Submitted for payment', 'Disbursement paid'];
+  function stepsFor(c) { return isMaterial(c) ? STEPS_MATERIAL : STEPS; }
+
   // Once the HOD has approved it, a disbursement is out of the employee's hands: it can no
   // longer be recalled for editing or deleted, so what Finance pays out is what was approved.
   function isHodApproved(c) {
     if (!c || c.deleted) return false;
     const s = (c.status || '').toLowerCase();
     if (s === 'approved' || s === 'paid') return true;
-    return typeof c.stage === 'number' && c.stage >= 2; // with payments, or already paid
+    // Past the approvers and with Finance. Read off the claim's own route, so inserting the
+    // CFO step for a material claim does not shift what counts as approved.
+    const payIdx = stepsFor(c).indexOf('Submitted for payment');
+    return typeof c.stage === 'number' && c.stage >= payIdx;
   }
   const LOCKED_TIP = 'Approved by the HOD — this disbursement can no longer be recalled or deleted.';
 
-  const STEPS = ['Filled in disbursement', 'Submitted to HOD', 'Submitted for payment', 'Disbursement paid'];
-  function stepperHtml(stage) {
-    const nodes = STEPS.map((s, i) =>
-      '<div class="step' + (i <= stage ? ' done' : '') + '"><span class="node"></span><span class="step-lbl">' + s + '</span></div>'
+  function stepperHtml(c, stage) {
+    const nodes = stepsFor(c).map((s, i) =>
+      '<div class="step' + (i <= stage ? ' done' : '') + (s === 'Approved by CFO' ? ' step-cfo' : '') +
+      '"><span class="node"></span><span class="step-lbl">' + s + '</span></div>'
     ).join('');
     return '<div class="stepper"><div class="stepper-nodes">' + nodes + '</div></div>';
   }
@@ -1125,6 +1150,9 @@
       const age = claimAge(c);
       if (age && age.late) {
         badges.push('<span class="age-flag-badge" data-tip="' + escapeHtml(ageTipText(age)) + '">!</span>');
+      }
+      if (isMaterial(c)) {
+        badges.push('<span class="material-badge" data-tip="' + escapeHtml(materialTipText()) + '">CFO</span>');
       }
       const flagBadges = badges.length ? '<div class="flag-badges">' + badges.join('') + '</div>' : '';
 
@@ -1152,7 +1180,7 @@
 
       const pr = document.createElement('tr');
       pr.className = 'progress-row' + (c.deleted ? ' deleted-row' : '');
-      pr.innerHTML = '<td colspan="6">' + stepperHtml(typeof c.stage === 'number' ? c.stage : 1) + '</td>';
+      pr.innerHTML = '<td colspan="6">' + stepperHtml(c, typeof c.stage === 'number' ? c.stage : 1) + '</td>';
       tb.appendChild(pr);
     });
     tb.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => openClaim(claims.find(x => x.ref === b.dataset.view))));
@@ -1390,6 +1418,11 @@
       h += '<div class="km-flag" style="margin-top:18px;">' + escapeHtml(ageTipText(age)) +
         ' Late submissions may be declined unless exceptional circumstances are justified and approved by a senior manager.</div>';
     }
+    if (isMaterial(c)) {
+      h += '<div class="material-flag" style="margin-top:18px;"><strong>Material disbursement.</strong> ' +
+        'At ' + money.format(c.grandTotal) + ' this claim is above ' + money.format(MATERIAL_LIMIT) +
+        ', so it must be approved by the requestor’s HOD and by the CFO before it can be paid.</div>';
+    }
     return h;
   }
 
@@ -1532,10 +1565,12 @@
     doc.autoTable({
       startY: y, theme: 'grid', styles: { fontSize: 9, cellPadding: 8 },
       head: [['Designation', 'Name', 'Signature', 'Date']],
+      // A material disbursement needs the CFO's signature as well as the H.O.D's.
       body: [
-        ['H.O.D / Site Manager', '', '', ''],
+        ['H.O.D / Site Manager', '', '', '']
+      ].concat(isMaterial(c) ? [['CFO (material disbursement)', '', '', '']] : []).concat([
         ['Employee', fullName(c.employee) || '', '', fmtDate(c.submitted)]
-      ],
+      ]),
       headStyles: { fillColor: NAVY, textColor: 255 },
       margin: { left: M, right: M }
     });
@@ -1543,6 +1578,10 @@
     const notes = [];
     if (c.kmFlagged) {
       notes.push('Note: The kilometres and/or route on this claim reflect a previous disbursement. Please ensure the accuracy and integrity of this disbursement.');
+    }
+    if (isMaterial(c)) {
+      notes.push('Note: Material disbursement — at ' + money.format(c.grandTotal) + ' this claim is above '
+        + money.format(MATERIAL_LIMIT) + ' and must be approved by the requestor’s H.O.D and by the CFO before payment.');
     }
     const pdfAge = claimAge(c);
     if (pdfAge && pdfAge.late) {
