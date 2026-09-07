@@ -777,13 +777,16 @@
 
   /* Confirmation dialog */
   .confirm-modal { max-width: 440px; }
-  .confirm-body { display: flex; gap: 16px; align-items: flex-start; padding: 26px 24px 20px; }
-  .confirm-icon {
-    flex: none; width: 38px; height: 38px; border-radius: 50%;
-    background: rgba(255,90,95,.16); color: var(--danger);
-    display: grid; place-items: center; font-weight: 800; font-size: 20px;
+  /* Warning triangle above the message, and the two actions pushed to opposite corners
+     so Delete is never the button a thumb reaches for by habit. */
+  .confirm-body {
+    display: flex; flex-direction: column; align-items: center; gap: 16px;
+    padding: 28px 24px 22px; text-align: center;
   }
-  .confirm-body p { margin: 4px 0 0; font-size: var(--fs-body); line-height: 1.5; color: var(--text); }
+  .confirm-icon { flex: none; width: 48px; height: 44px; color: var(--danger); }
+  .confirm-body p { margin: 0; font-size: var(--fs-body); line-height: 1.5; color: var(--text); }
+  /* Two classes, so this beats the .modal-foot flex-end defined further down */
+  .modal-foot.confirm-foot { justify-content: space-between; }
   .btn-delete { background: var(--danger); color: var(--mdg-white); border: 0; }
   .btn-delete:hover { filter: brightness(1.08); }
   .prev-empty { text-align: center; color: var(--text-dim); padding: 28px 20px; }

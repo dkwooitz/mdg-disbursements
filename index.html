@@ -570,12 +570,16 @@
 <div class="modal-overlay hidden" id="confirmModal">
   <div class="modal confirm-modal">
     <div class="confirm-body">
-      <div class="confirm-icon">!</div>
+      <svg class="confirm-icon" viewBox="0 0 48 44" role="img" aria-label="Warning">
+        <path d="M24 3.5 45.5 40.5H2.5Z" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linejoin="round"/>
+        <line x1="24" y1="17" x2="24" y2="29" stroke="currentColor" stroke-width="3.6" stroke-linecap="round"/>
+        <circle cx="24" cy="34.6" r="2.1" fill="currentColor"/>
+      </svg>
       <p id="confirmMsg"></p>
     </div>
-    <div class="modal-foot">
-      <button class="btn btn-ghost" id="confirmCancel">Cancel</button>
+    <div class="modal-foot confirm-foot">
       <button class="btn btn-delete" id="confirmOk">Delete</button>
+      <button class="btn btn-ghost" id="confirmCancel">Cancel</button>
     </div>
   </div>
 </div>

@@ -1044,6 +1044,11 @@
         c.stage = 1; // submitted to the HOD again, from the start
         c.revision = (c.revision || 0) + 1;
         c.resubmittedAt = new Date();
+        // The claim takes the date it actually reached the HOD in its current form, so the
+        // 90-day rule runs to this submission and not to the one that was withdrawn. The
+        // first submission is kept alongside it for the record.
+        c.firstSubmitted = c.firstSubmitted || c.submitted;
+        c.submitted = c.resubmittedAt;
         delete c.statusBeforeRecall; delete c.stageBeforeRecall;
 
         recomputeKmFlags();
@@ -1165,7 +1170,9 @@
     const n = c.revision || 0;
     return 'Revised claim — recalled and resubmitted to the HOD '
       + (n === 1 ? 'once' : n + ' times')
-      + (c.resubmittedAt ? ', most recently on ' + fmtDateTime(c.resubmittedAt) : '') + '.';
+      + (c.resubmittedAt ? ', most recently on ' + fmtDateTime(c.resubmittedAt) : '')
+      + (c.firstSubmitted ? '. It was first submitted on ' + fmtDateTime(c.firstSubmitted)
+        + ', but the claim now stands on its latest submission date' : '') + '.';
   }
 
   function materialTipText() {
@@ -1390,8 +1397,7 @@
     }
     showConfirm('Delete disbursement ' + ref + '? It will be retracted from the HOD and greyed out, and this '
       + 'cannot be undone — a deleted disbursement can never be brought back. The record and its reference '
-      + 'number stay on file for audit, and the receipts on it are released, so a corrected claim must be '
-      + 'submitted as a new disbursement.', () => {
+      + 'number stay on file for audit, and the receipts on it are released.', () => {
       c.deleted = true;
       c.deletedAt = new Date();
       c.statusBefore = c.status;                              // where it stood when it was pulled
