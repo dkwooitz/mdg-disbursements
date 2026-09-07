@@ -219,9 +219,9 @@
       '<td class="col-amt" data-label="Amount (R)"><span class="amt-cell">R 0,00</span></td>' +
       '<td class="col-odo" data-label="Odometer">' +
         '<input type="file" accept="image/*" class="odo-input" hidden>' +
-        '<button type="button" class="odo-btn" title="Upload odometer photo">' +
+        '<button type="button" class="odo-btn" title="Upload proof of the trip">' +
           '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.4"/></svg>' +
-          'Photo' +
+          'Proof' +
         '</button>' +
       '</td>' +
       '<td class="col-del"><button class="row-del" title="Remove row">&times;</button></td>';
@@ -322,8 +322,8 @@
         const url = URL.createObjectURL(f);
         upBtn.classList.add('has-photo');
         upBtn.innerHTML =
-          '<img class="odo-thumb" src="' + url + '" alt="Attached photo">' +
-          '<span class="odo-ok" title="Photo attached">&#10003;</span>';
+          '<img class="odo-thumb" src="' + url + '" alt="Attached proof">' +
+          '<span class="odo-ok" title="Proof attached">&#10003;</span>';
         if (which === 'other') readReceipt(f, tr, upBtn);
       });
     }
