@@ -1345,7 +1345,7 @@
       tb.appendChild(pr);
     });
     tb.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => openClaim(claims.find(x => x.ref === b.dataset.view))));
-    tb.querySelectorAll('[data-pdf]').forEach(b => b.addEventListener('click', () => generatePDF(claims.find(x => x.ref === b.dataset.pdf))));
+    tb.querySelectorAll('[data-pdf]').forEach(b => b.addEventListener('click', () => generateFullPDF(claims.find(x => x.ref === b.dataset.pdf))));
     tb.querySelectorAll('[data-recall]').forEach(b => b.addEventListener('click', () => recallClaim(b.dataset.recall)));
     tb.querySelectorAll('[data-delete]').forEach(b => b.addEventListener('click', () => deleteClaim(b.dataset.delete)));
   }
@@ -1815,7 +1815,7 @@
   document.getElementById('mClose').addEventListener('click', closeModal);
   document.getElementById('mCloseBtn').addEventListener('click', closeModal);
   modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
-  document.getElementById('mPdf').addEventListener('click', () => { if (modalClaim) generatePDF(modalClaim); });
+  document.getElementById('mPdf').addEventListener('click', () => { if (modalClaim) generateFullPDF(modalClaim); });
 
   /* ---- Confirmation dialog ---- */
   const confirmModal = document.getElementById('confirmModal');
@@ -1844,7 +1844,45 @@
     showToast._t = setTimeout(() => t.classList.remove('show'), ms || 6000);
   }
 
-  function generatePDF(c) {
+  /* ---- Attachments inside the PDF ----
+     Everything uploaded on the claim is carried in the same file, so the form and the
+     evidence for it cannot be separated once it leaves the app. */
+
+  // pdf-lib is only needed when an attachment is itself a PDF, so it is fetched then
+  // rather than loaded on every visit — it is half a megabyte.
+  let pdfLibPromise = null;
+  function loadPdfLib() {
+    if (window.PDFLib) return Promise.resolve(window.PDFLib);
+    if (pdfLibPromise) return pdfLibPromise;
+    pdfLibPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
+      s.onload = () => resolve(window.PDFLib);
+      s.onerror = () => reject(new Error('pdf-lib did not load'));
+      document.head.appendChild(s);
+    });
+    return pdfLibPromise;
+  }
+
+  // Read an image at its own size, as JPEG, ready to place on a page.
+  function imageForPdf(blob) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = () => {
+        const cv = document.createElement('canvas');
+        cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+        cv.getContext('2d').drawImage(img, 0, 0);
+        URL.revokeObjectURL(url);
+        resolve({ dataUrl: cv.toDataURL('image/jpeg', 0.9), w: cv.width, h: cv.height });
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image did not load')); };
+      img.src = url;
+    });
+  }
+
+  function generatePDF(c, opts) {
+    opts = opts || {};   // { defer: true } hands the document back instead of saving it
     if (!window.jspdf || !window.jspdf.jsPDF) {
       showToast('The PDF library hasn\u2019t loaded — this can happen offline or when the in-app preview blocks external libraries. Open the app in a browser and try again.');
       return;
@@ -1984,11 +2022,97 @@
     }
 
     try {
+      if (opts.defer) return doc;   // the caller is adding attachments and will save it
       doc.save(c.ref + '.pdf');
       showToast('Generated ' + c.ref + '.pdf. If no download started, this in-app preview is blocking it — open the app in a browser to save it.', 7000);
     } catch (e) {
       try { window.open(doc.output('bloburl'), '_blank'); } catch (e2) {}
       showToast('Your PDF is ready, but this preview blocked the download. Open the app in a browser to save ' + c.ref + '.pdf.', 7000);
+    }
+  }
+
+  // The claim form plus every file attached to it, as one PDF.
+  async function generateFullPDF(c) {
+    if (!c) return;
+    const items = attachmentList(c).filter(i => i.id);
+    if (!items.length) { generatePDF(c); return; }   // nothing attached — the form on its own
+
+    showToast('Building ' + c.ref + '.pdf with its ' + items.length + ' attachment' + (items.length > 1 ? 's' : '') + '…', 4000);
+
+    const doc = generatePDF(c, { defer: true });
+    if (!doc) return; // the libraries did not load; generatePDF has already said so
+
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const M = 40;
+    // Images are drawn onto pages of their own; a PDF attachment's pages are copied in
+    // whole and can only go at the end. Number them in that order, so "Attachment 2" is
+    // the second thing after the form and not the second thing that was uploaded.
+    const loaded = [];
+    for (const it of items) {
+      const rec = await readKeptFile(it.id);
+      if (rec) loaded.push({ it: it, rec: rec, isImage: /^image\//.test(rec.type) });
+    }
+    const ordered = loaded.filter(x => x.isImage).concat(loaded.filter(x => !x.isImage));
+
+    const pdfAttachments = [];
+    let n = 0;
+
+    for (const entry of ordered) {
+      const it = entry.it, rec = entry.rec;
+      n++;
+      if (entry.isImage) {
+        try {
+          const img = await imageForPdf(rec.blob);
+          doc.addPage();
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(0);
+          doc.text('Attachment ' + n + ': ' + it.label, M, 46);
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(120);
+          doc.text([rec.name || '', c.ref].filter(Boolean).join('  ·  '), M, 60);
+          doc.setTextColor(0);
+          const top = 74;
+          const scale = Math.min((pageW - 2 * M) / img.w, (pageH - top - M) / img.h);
+          doc.addImage(img.dataUrl, 'JPEG', M, top, img.w * scale, img.h * scale);
+        } catch (e) { /* an unreadable image is skipped rather than losing the whole PDF */ }
+      } else {
+        pdfAttachments.push({ rec: rec, label: it.label, n: n });
+      }
+    }
+
+    // A PDF attachment cannot be drawn onto a page — its pages are copied in whole.
+    if (!pdfAttachments.length) {
+      try { doc.save(c.ref + '.pdf'); showToast('Saved ' + c.ref + '.pdf with ' + n + ' attachment' + (n > 1 ? 's' : '') + '.', 6000); }
+      catch (e) { try { window.open(doc.output('bloburl'), '_blank'); } catch (e2) {} }
+      return;
+    }
+
+    let PDFLib;
+    try { PDFLib = await loadPdfLib(); } catch (e) {
+      try { doc.save(c.ref + '.pdf'); } catch (e2) {}
+      showToast('Saved ' + c.ref + '.pdf, but the PDF attachments could not be merged in — that needs a connection. Open them from View instead.', 8000);
+      return;
+    }
+
+    try {
+      const merged = await PDFLib.PDFDocument.create();
+      const base = await PDFLib.PDFDocument.load(doc.output('arraybuffer'));
+      (await merged.copyPages(base, base.getPageIndices())).forEach(p => merged.addPage(p));
+
+      for (const att of pdfAttachments) {
+        const src = await PDFLib.PDFDocument.load(await att.rec.blob.arrayBuffer(), { ignoreEncryption: true });
+        (await merged.copyPages(src, src.getPageIndices())).forEach(p => merged.addPage(p));
+      }
+
+      const blob = new Blob([await merged.save()], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = c.ref + '.pdf';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+      showToast('Saved ' + c.ref + '.pdf with ' + n + ' attachment' + (n > 1 ? 's' : '') + '.', 6000);
+    } catch (e) {
+      try { doc.save(c.ref + '.pdf'); } catch (e2) {}
+      showToast('Saved ' + c.ref + '.pdf, but one of the PDF attachments could not be merged in. Open it from View instead.', 8000);
     }
   }
 
