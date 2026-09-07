@@ -161,23 +161,20 @@
               <input type="text" id="empMachine" data-required autocomplete="off" placeholder="Type to search machines…" />
               <div class="combo-list hidden" id="machineList"></div>
             </div>
-            <p class="field-hint">Not for a specific site? Your machine is <strong>overheads</strong>.</p>
           </div>
           <div class="field">
-            <label>Project</label>
+            <label>Project<span class="req">*</span></label>
             <div class="combo" id="projectCombo">
-              <input type="text" id="empProject" autocomplete="off" placeholder="Type to search projects…" />
+              <input type="text" id="empProject" data-required autocomplete="off" placeholder="Type to search projects…" />
               <div class="combo-list hidden" id="projectList"></div>
             </div>
-            <p class="field-hint">Only if the claim relates to a project.</p>
           </div>
           <div class="field">
-            <label>Cost centre</label>
+            <label>Cost centre<span class="req">*</span></label>
             <div class="combo" id="costCentreCombo">
-              <input type="text" id="empCostCentre" autocomplete="off" placeholder="Type to search cost centres…" />
+              <input type="text" id="empCostCentre" data-required autocomplete="off" placeholder="Type to search cost centres…" />
               <div class="combo-list hidden" id="costCentreList"></div>
             </div>
-            <p class="field-hint">Search by code or name, e.g. <strong>CC5300</strong>.</p>
           </div>
         </div>
       </section>

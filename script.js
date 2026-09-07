@@ -2017,7 +2017,7 @@
   // Type-ahead combobox for Site, constrained to the SITES list (admin-editable).
   // Project and cost centre behave like the site and machine boxes, except that leaving
   // them blank is allowed — not every disbursement belongs to a project or a cost centre.
-  function initOptionalCombo(inputId, listId, getItems, emptyText) {
+  function initListCombo(inputId, listId, getItems, emptyText) {
     const input = document.getElementById(inputId);
     const list = document.getElementById(listId);
     if (!input || !list) return;
@@ -2033,7 +2033,7 @@
         : '<div class="combo-empty">' + emptyText + '</div>';
       list.classList.remove('hidden');
     }
-    function choose(p) { input.value = p; list.classList.add('hidden'); }
+    function choose(p) { input.value = p; input.classList.remove('field-error'); list.classList.add('hidden'); }
     function highlight() {
       const opts = list.querySelectorAll('.combo-opt');
       opts.forEach((o, i) => o.classList.toggle('active', i === activeIdx));
@@ -2200,8 +2200,8 @@
   writeBankFields(bankProfiles.main);
   updateBankHint();
   initSiteCombo();
-  initOptionalCombo('empProject', 'projectList', () => PROJECTS, 'No matching project');
-  initOptionalCombo('empCostCentre', 'costCentreList', () => COST_CENTRES, 'No matching cost centre');
+  initListCombo('empProject', 'projectList', () => PROJECTS, 'No matching project');
+  initListCombo('empCostCentre', 'costCentreList', () => COST_CENTRES, 'No matching cost centre');
   renderContacts();
   renderAdminContacts();
   renderAdminSites();
