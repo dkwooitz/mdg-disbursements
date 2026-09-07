@@ -1029,7 +1029,9 @@
     const data = collectClaim();
 
     if (editingRef) {
-      // Update the recalled claim in place, preserving its reference, date, status and progress.
+      // Update the recalled claim in place. It keeps its reference and its original
+      // submission date, but NOT its approval progress: a changed claim goes back to the
+      // HOD as a fresh request, so nothing can be added to a claim after it was approved.
       const c = claims.find(x => x.ref === editingRef);
       if (c) {
         c.employee = data.employee;
@@ -1037,9 +1039,17 @@
         if (!(bankProofInput.files && bankProofInput.files.length) && editingProofName) c.banking.proofName = editingProofName;
         c.km = data.km; c.other = data.other;
         c.kmTotal = data.kmTotal; c.otherTotal = data.otherTotal; c.grandTotal = data.grandTotal;
+
+        c.status = 'Pending HOD';
+        c.stage = 1; // submitted to the HOD again, from the start
+        c.revision = (c.revision || 0) + 1;
+        c.resubmittedAt = new Date();
+        delete c.statusBeforeRecall; delete c.stageBeforeRecall;
+
         recomputeKmFlags();
         renderPrev(c.ref);
-        submitMsg.textContent = 'Claim ' + c.ref + ' updated. Its progress was kept.';
+        submitMsg.textContent = 'Claim ' + c.ref + ' updated and sent to your HOD again. '
+          + 'Any approval it had before falls away — it must be approved afresh.';
         submitMsg.className = 'submit-msg ok';
         saveClaims();
       }
@@ -1149,6 +1159,15 @@
      app detects it, says so, and shows the longer route on the claim's progress. */
   const MATERIAL_LIMIT = 10000; // rand, excluding
   function isMaterial(c) { return !!c && +c.grandTotal > MATERIAL_LIMIT; }
+  // Says a claim was pulled back, changed and sent to the HOD again — so an approver can
+  // see they are looking at something different from what they may have seen before.
+  function revisionTipText(c) {
+    const n = c.revision || 0;
+    return 'Revised claim — recalled and resubmitted to the HOD '
+      + (n === 1 ? 'once' : n + ' times')
+      + (c.resubmittedAt ? ', most recently on ' + fmtDateTime(c.resubmittedAt) : '') + '.';
+  }
+
   function materialTipText() {
     return 'Material disbursement — above ' + money.format(MATERIAL_LIMIT) + '. It must be approved by '
       + 'your HOD and by the CFO before it can be paid.';
@@ -1202,6 +1221,9 @@
       }
       if (isMaterial(c)) {
         badges.push('<span class="material-badge" data-tip="' + escapeHtml(materialTipText()) + '">CFO</span>');
+      }
+      if (c.revision) {
+        badges.push('<span class="revision-badge" data-tip="' + escapeHtml(revisionTipText(c)) + '">REV ' + c.revision + '</span>');
       }
       const flagBadges = badges.length ? '<div class="flag-badges">' + badges.join('') + '</div>' : '';
 
@@ -1315,6 +1337,17 @@
     if (submitBtnEl) submitBtnEl.textContent = 'Submit to HOD';
   }
   document.getElementById('cancelEdit').addEventListener('click', () => {
+    // Nothing was changed, so put the claim back where it was rather than leaving it
+    // withdrawn from the HOD.
+    const c = claims.find(x => x.ref === editingRef);
+    if (c && c.status === 'Recalled') {
+      c.status = c.statusBeforeRecall || 'Pending HOD';
+      c.stage = typeof c.stageBeforeRecall === 'number' ? c.stageBeforeRecall : 1;
+      delete c.statusBeforeRecall; delete c.stageBeforeRecall; delete c.recalledAt;
+      saveClaims();
+      renderPrev();
+      showToast('Edit cancelled. Disbursement ' + c.ref + ' is back with your HOD, unchanged.', 5000);
+    }
     endEdit();
     resetForm();
     if (submitMsg) { submitMsg.textContent = ''; submitMsg.className = 'submit-msg'; }
@@ -1326,11 +1359,23 @@
     if (!c) return;
     if (c.deleted) { showToast('Disbursement ' + ref + ' was deleted and cannot be reopened. Its receipts are free, so submit a corrected claim as a new disbursement.', 6000); return; }
     if (isHodApproved(c)) { showToast('Disbursement ' + ref + ' has been approved by the HOD and can no longer be recalled.', 5000); return; }
+
+    // Recalling withdraws the claim from the HOD there and then. What the HOD was asked to
+    // approve is no longer what the employee is holding, so it may not sit in their queue
+    // while it is being changed. Submitting again sends it back as a fresh request.
+    c.statusBeforeRecall = c.status;
+    c.stageBeforeRecall = typeof c.stage === 'number' ? c.stage : 1;
+    c.status = 'Recalled';
+    c.stage = 0; // back to "filled in" — no longer with the HOD
+    c.recalledAt = new Date();
+    saveClaims();
+    renderPrev();
+
     populateForm(c);
     startEdit(ref, c.banking.proofName);
     if (submitMsg) { submitMsg.textContent = ''; submitMsg.className = 'submit-msg'; }
     showView('new');
-    showToast('Disbursement ' + ref + ' reopened for editing. Its progress is unchanged.', 5000);
+    showToast('Disbursement ' + ref + ' has been withdrawn from your HOD while you edit it. Submitting again sends it back to them for approval.', 7000);
   }
 
   // ---- Delete: retract the disbursement, never remove it ----
@@ -1576,6 +1621,10 @@
       h += '<div class="km-flag" style="margin-top:18px;">' + escapeHtml(ageTipText(age)) +
         ' Late submissions may be declined unless exceptional circumstances are justified and approved by a senior manager.</div>';
     }
+    if (c.revision) {
+      h += '<div class="km-flag" style="margin-top:18px;">' + escapeHtml(revisionTipText(c)) +
+        ' Any approval it had before that falls away — it must be approved as it now stands.</div>';
+    }
     if (isMaterial(c)) {
       h += '<div class="material-flag" style="margin-top:18px;"><strong>Material disbursement.</strong> ' +
         'At ' + money.format(c.grandTotal) + ' this claim is above ' + money.format(MATERIAL_LIMIT) +
@@ -1737,6 +1786,9 @@
     const notes = [];
     if (c.kmFlagged) {
       notes.push('Note: The kilometres and/or route on this claim reflect a previous disbursement. Please ensure the accuracy and integrity of this disbursement.');
+    }
+    if (c.revision) {
+      notes.push('Note: ' + revisionTipText(c) + ' Any approval given before that falls away.');
     }
     if (isMaterial(c)) {
       notes.push('Note: Material disbursement — at ' + money.format(c.grandTotal) + ' this claim is above '

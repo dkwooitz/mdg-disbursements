@@ -517,6 +517,27 @@
     z-index: 60; pointer-events: none;
   }
   .material-badge:hover::after { opacity: 1; visibility: visible; transform: translateY(0); }
+  /* A claim that was pulled back from the HOD, changed, and sent again */
+  .revision-badge {
+    position: relative;
+    display: inline-flex; align-items: center; justify-content: center;
+    height: 20px; padding: 0 7px; border-radius: 10px;
+    background: var(--warning); color: var(--mdg-white);
+    font-size: 10.5px; font-weight: 800; letter-spacing: .6px; line-height: 1;
+    cursor: help;
+  }
+  .revision-badge::after {
+    content: attr(data-tip);
+    position: absolute; left: 0; top: calc(100% + 8px);
+    width: 250px; padding: 10px 12px;
+    background: var(--card); color: var(--text);
+    border: 1px solid var(--warning); border-radius: 8px; box-shadow: var(--shadow);
+    font-size: 12px; font-weight: 500; letter-spacing: 0; line-height: 1.45; text-align: left;
+    opacity: 0; visibility: hidden; transform: translateY(-4px);
+    transition: opacity .15s ease, transform .15s ease;
+    z-index: 60; pointer-events: none;
+  }
+  .revision-badge:hover::after { opacity: 1; visibility: visible; transform: translateY(0); }
   /* The extra CFO node on a material claim's progress line */
   .stepper .step.step-cfo .step-lbl { font-weight: 700; }
   /* Yellow warning: the expense is older than 90 calendar days at the date of submission */
