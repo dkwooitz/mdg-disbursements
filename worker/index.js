@@ -7,7 +7,7 @@
  * the chain, and the API key stays on the server side.
  *
  * The key is a Worker secret, never a file in this repo:
- *     npx wrangler secret put GEMINI_API_KEY
+ *     npx wrangler secret put GEMINI_API_KEY   (GEMINI_API_KEYS is accepted too)
  */
 
 const AI_PATH = '/api/ai';
@@ -47,9 +47,11 @@ async function handleAI(request, env, url) {
   if (request.method !== 'POST') return json({ error: 'Use POST.' }, 405);
   if (!fromThisApp(request, url)) return json({ error: 'This endpoint only answers the app itself.' }, 403);
 
-  const apiKey = String(env.GEMINI_API_KEY || '').trim();
+  // GEMINI_API_KEYS is accepted too: the secret was created under that name, and a plural
+  // "S" is not worth a broken reader.
+  const apiKey = String(env.GEMINI_API_KEY || env.GEMINI_API_KEYS || '').trim();
   if (!apiKey) {
-    return json({ error: 'The reader is not configured yet: GEMINI_API_KEY has not been set on this Worker.' }, 503);
+    return json({ error: 'The reader is not configured yet: no GEMINI_API_KEY secret is set on this Worker.' }, 503);
   }
   // A Gemini key is around 39 characters. Anything shorter did not paste properly, and
   // Google answers that with an empty 400 that explains nothing.
