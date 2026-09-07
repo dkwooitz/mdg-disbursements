@@ -697,7 +697,7 @@
   }
   .proof-rule.required { color: var(--text); }
   /* A claim line that still needs its receipt */
-  .claim-table tr.row-error td { background: var(--danger-tint); }
+  /* The Proof button alone carries the warning — no fill behind the row */
   .claim-table tr.row-error .odo-btn { border-color: var(--danger); color: var(--danger); }
   .btn-add {
     background: transparent;
