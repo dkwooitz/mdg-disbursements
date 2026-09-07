@@ -216,8 +216,8 @@
       '<td data-label="From"><input type="text" placeholder="From"></td>' +
       '<td data-label="To"><input type="text" placeholder="To"></td>' +
       '<td data-label="Kilometres"><input type="number" min="0" step="1" placeholder="0" class="km-input"></td>' +
-      '<td class="col-amt" data-label="Amount"><span class="amt-cell">R 0,00</span></td>' +
-      '<td class="col-odo" data-label="Odometer photo">' +
+      '<td class="col-amt" data-label="Amount (R)"><span class="amt-cell">R 0,00</span></td>' +
+      '<td class="col-odo" data-label="Odometer">' +
         '<input type="file" accept="image/*" class="odo-input" hidden>' +
         '<button type="button" class="odo-btn" title="Upload odometer photo">' +
           '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.4"/></svg>' +
@@ -231,7 +231,7 @@
     const tr = document.createElement('tr');
     tr.innerHTML =
       '<td data-label="Date"><input type="date"></td>' +
-      '<td data-label="Description"><input type="text" placeholder="Description of claim"></td>' +
+      '<td data-label="Description of claim"><input type="text" placeholder="Description of claim"></td>' +
       '<td class="col-amt" data-label="Amount">' +
         '<div class="cur-row">' +
           '<select class="cur-select">' + curOptions() + '</select>' +
@@ -239,7 +239,7 @@
         '</div>' +
         '<div class="zar-line"><span class="zar-eq">R 0,00</span><span class="rate-note"></span></div>' +
       '</td>' +
-      '<td class="col-odo" data-label="Proof of claim">' +
+      '<td class="col-odo" data-label="Proof">' +
         '<input type="file" accept="image/*" class="odo-input" hidden>' +
         '<button type="button" class="odo-btn" title="Upload proof of claim">' +
           '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-2-1.3-2 1.3-2-1.3-2 1.3-2-1.3L6 21z"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="9" y1="12" x2="15" y2="12"/></svg>' +

@@ -952,30 +952,67 @@
     .page-title { font-size: var(--fs-section); }
     .card { padding: 16px 14px; }
 
+    /* Both tab labels on one line at phone width */
+    .tabs { gap: 0; }
+    .tab { flex: 1 1 0; justify-content: center; padding: 12px 6px; font-size: 12px; gap: 6px; }
+    .tab svg { height: 15px; }
+
     /* ---- Claim entry tables become cards ---- */
     .claim-table, .claim-table tbody, .claim-table tr, .claim-table td { display: block; width: 100%; }
     .claim-table thead { display: none; }
     .claim-table tr {
       position: relative;
       border: 1px solid var(--border); border-radius: 10px;
-      padding: 12px 12px 6px; margin-bottom: 12px; background: var(--bg);
+      margin-bottom: 14px; background: var(--bg);
     }
-    .claim-table td { padding: 0 0 12px; }
+    .claim-table td { padding: 0 0 14px; }
     .claim-table td::before {
       content: attr(data-label); display: block;
       font-size: var(--fs-label); font-weight: 700; letter-spacing: 1.2px;
       text-transform: uppercase; color: var(--text-dim); margin-bottom: 5px;
     }
     .claim-table td.col-del::before { content: none; }
-    .claim-table input, .claim-table select { width: 100%; }
+
+    /* Only the field that IS the cell goes full width. The currency select and its
+       amount box live in a flex row inside one cell and must keep their own sizing,
+       or the amount is pushed straight out of the card. */
+    .claim-table td > input,
+    .claim-table td > select,
+    .claim-table td > .cur-row + .zar-line { width: 100%; }
+    .cur-row { gap: 8px; }
+    .cur-row .cur-select { flex: 0 0 auto; width: auto; min-width: 104px; }
+    .cur-row .amt-input { flex: 1 1 auto; min-width: 0; }
+    /* iOS gives date inputs an intrinsic width that ignores the card — pin it down */
+    .claim-table input[type="date"] {
+      width: 100%; min-width: 0; max-width: 100%;
+      text-align: left; -webkit-appearance: none; appearance: none;
+    }
     .col-amt input { text-align: left; }
     .col-odo { white-space: normal; }
-    .odo-btn { width: 100%; justify-content: center; min-height: 42px; }
-    /* The remove button sits in the corner of the card rather than in a column */
-    .claim-table td.col-del {
-      position: absolute; top: 4px; right: 6px; width: auto; padding: 0;
+    .odo-btn { width: 100%; justify-content: center; min-height: 44px; }
+
+    /* Each row reads as a numbered card with its own header */
+    .claim-table tbody { counter-reset: claimrow; }
+    .claim-table tr { counter-increment: claimrow; padding: 38px 14px 8px; }
+    .claim-table tr::before {
+      content: 'Trip ' counter(claimrow);
+      position: absolute; top: 12px; left: 14px;
+      font-size: var(--fs-label); font-weight: 700; letter-spacing: 1.2px;
+      text-transform: uppercase; color: var(--accent);
     }
-    .row-del { min-width: 34px; min-height: 34px; }
+    #other-rows tr::before { content: 'Item ' counter(claimrow); }
+    .claim-table td.col-del {
+      position: absolute; top: 6px; right: 8px; width: auto; padding: 0;
+    }
+    .row-del { min-width: 36px; min-height: 36px; font-size: 22px; }
+
+    /* The amount on a travelling row is worked out for you, so it reads as a result */
+    .claim-table td.col-amt .amt-cell {
+      display: block; text-align: right;
+      background: var(--accent-soft); border-radius: 8px;
+      padding: 10px 12px; font-size: var(--fs-heading); font-weight: 700; color: var(--text);
+    }
+    .zar-line { margin-top: 6px; }
     .tbl-scroll { overflow: visible; }
 
     .tbl-scroll { overflow: visible; }
