@@ -5,9 +5,18 @@
   "compatibility_date": "2026-07-08",
   "compatibility_flags": ["nodejs_compat"],
 
+  // The Worker script. It serves the static files and handles /api/ai (the document
+  // reader). Everything that is not /api/ai falls through to the assets below.
+  "main": "worker/index.js",
+
   // Serve the site's files (index.html, styles.css, script.js) as static assets.
   // "." means "the root of the repo" — the folder these files live in.
-  "assets": { "directory": "." },
+  // The binding lets the Worker hand a request straight to them.
+  "assets": { "directory": ".", "binding": "ASSETS" },
+
+  // The Gemini model the reader uses. Change it here if Google retires this one.
+  // The API key is NOT here — it is a secret: npx wrangler secret put GEMINI_API_KEY
+  "vars": { "GEMINI_MODEL": "gemini-2.5-flash" },
 
   "observability": { "enabled": true }
 }

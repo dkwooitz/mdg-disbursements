@@ -357,22 +357,24 @@
   }
 
   // Read a receipt photo with the AI and fill in date / description / amount.
-  /* ---- Secure AI proxy (Supabase Edge Function) — no API key lives in the app ---- */
-  const AI_PROXY_URL = 'https://gvdrncjdveldpjiecspv.supabase.co/functions/v1/gemini-proxy';
-  // Public Supabase "anon" key — designed for browser use, not a secret.
-  const AI_PROXY_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd2ZHJuY2pkdmVsZHBqaWVjc3B2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI5NjUwMzQsImV4cCI6MjA5ODU0MTAzNH0._q3DG9_mELkAHETVymtfwi9-swm2QL91TrKEXo6AaLU';
+  /* ---- Document reader ----
+     Handled by this app's own Cloudflare Worker (see worker/index.js), so the request
+     never leaves the app's origin and the API key stays on the server. */
+  const AI_PROXY_URL = '/api/ai';
 
-  // Sends a file + prompt to the backend proxy and returns the AI's raw text result.
+  // Sends a file + prompt to the Worker and returns the AI's raw text result.
   async function callAIProxy(base64Data, mimeType, prompt) {
     const resp = await fetch(AI_PROXY_URL, {
       method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + AI_PROXY_ANON,
-        'Content-Type': 'application/json'
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mimeType: mimeType || 'image/jpeg', base64Data, prompt })
     });
-    if (!resp.ok) throw new Error('AI proxy returned ' + resp.status);
+    if (!resp.ok) {
+      // The Worker explains itself in JSON; carry that up so a failure is diagnosable.
+      let why = 'the reader returned ' + resp.status;
+      try { const e = await resp.json(); if (e && e.error) why = e.error; } catch (err) {}
+      throw new Error(why);
+    }
     const data = await resp.json();
     return (data && data.result) ? String(data.result) : '';
   }

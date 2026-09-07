@@ -2,3 +2,4 @@
 .wrangler
 .claude
 node_modules
+worker
