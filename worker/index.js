@@ -47,8 +47,14 @@ async function handleAI(request, env, url) {
   if (request.method !== 'POST') return json({ error: 'Use POST.' }, 405);
   if (!fromThisApp(request, url)) return json({ error: 'This endpoint only answers the app itself.' }, 403);
 
-  if (!env.GEMINI_API_KEY) {
+  const apiKey = String(env.GEMINI_API_KEY || '').trim();
+  if (!apiKey) {
     return json({ error: 'The reader is not configured yet: GEMINI_API_KEY has not been set on this Worker.' }, 503);
+  }
+  // A Gemini key is around 39 characters. Anything shorter did not paste properly, and
+  // Google answers that with an empty 400 that explains nothing.
+  if (apiKey.length < 20) {
+    return json({ error: 'The stored GEMINI_API_KEY looks incomplete, so the reading service rejects it. Set it again with: npx wrangler secret put GEMINI_API_KEY' }, 503);
   }
 
   const declared = Number(request.headers.get('Content-Length') || 0);
@@ -71,7 +77,7 @@ async function handleAI(request, env, url) {
   try {
     res = await fetch(upstream, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: prompt }, { inline_data: { mime_type: mimeType, data: base64Data } }] }],
         generationConfig: { temperature: 0, maxOutputTokens: 2048 }
@@ -81,13 +87,17 @@ async function handleAI(request, env, url) {
     return json({ error: 'Could not reach the reading service.' }, 502);
   }
 
-  const payload = await res.json().catch(() => null);
+  const raw = await res.text();
+  let payload = null;
+  try { payload = JSON.parse(raw); } catch (e) { /* upstream did not answer with JSON */ }
 
   if (!res.ok) {
     // Pass the upstream reason through — a wrong model name or a rejected key should be
-    // diagnosable from the browser rather than showing up as a blank failure.
-    const reason = (payload && payload.error && payload.error.message) || ('upstream returned ' + res.status);
-    return json({ error: reason }, 502);
+    // diagnosable from the browser rather than showing up as a blank failure. Fall back to
+    // the raw body, since a non-JSON answer is exactly the case worth seeing.
+    const reason = (payload && payload.error && payload.error.message)
+      || (raw ? raw.slice(0, 400) : 'upstream returned ' + res.status);
+    return json({ error: reason, status: res.status }, 502);
   }
 
   const parts = payload && payload.candidates && payload.candidates[0]
