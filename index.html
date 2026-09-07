@@ -116,6 +116,14 @@
         <button type="button" id="cancelEdit">Cancel edit</button>
       </div>
 
+      <div class="edit-banner hidden" id="draftBanner">
+        <span id="draftBannerText"></span>
+        <span class="banner-actions">
+          <button type="button" id="draftRestore">Restore draft</button>
+          <button type="button" id="draftDiscard">Discard</button>
+        </span>
+      </div>
+
       <!-- Requestor -->
       <section class="card">
         <h2 class="card-title">Requestor</h2>
@@ -286,7 +294,7 @@
       </div>
 
       <div class="actions">
-        <button class="btn btn-ghost">Save draft</button>
+        <button class="btn btn-ghost" type="button" id="saveDraftBtn">Save draft</button>
         <button class="btn btn-primary" id="submitBtn">Submit to HOD</button>
       </div>
       <div class="submit-msg" id="submitMsg"></div>

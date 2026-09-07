@@ -1057,6 +1057,7 @@
         + (isMaterial(data) ? ' It is a material disbursement, so it goes to your HOD and then to the CFO for approval.' : '');
       submitMsg.className = 'submit-msg ok';
       if (isMaterial(data)) showToast(materialTipText(), 8000);
+      clearDraft(); // the claim is in — the draft has served its purpose
       resetForm();
       showView('previous');
     }
@@ -1399,6 +1400,103 @@
       km, other, kmTotal, otherTotal, grandTotal: kmTotal + otherTotal
     };
   }
+
+  /* ===== Save draft =====
+     Keeps a half-finished claim on the device so it survives closing the tab. Uploaded
+     files cannot be stored, so a restored draft asks for its proofs again — the claim
+     still cannot be submitted without them. */
+  const DRAFT_KEY = 'mdg-draft';
+
+  function collectDraft() {
+    const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+    const km = [...kmBody.querySelectorAll('tr')].map(tr => {
+      const texts = tr.querySelectorAll('input[type=text]');
+      return { date: tr.querySelector('input[type=date]').value,
+               from: texts[0] ? texts[0].value : '', to: texts[1] ? texts[1].value : '',
+               km: tr.querySelector('.km-input').value };
+    });
+    const other = [...otherBody.querySelectorAll('tr')].map(tr => ({
+      date: tr.querySelector('input[type=date]').value,
+      desc: tr.querySelector('input[type=text]').value,
+      currency: tr.querySelector('.cur-select').value,
+      amount: tr.querySelector('.amt-input').value
+    }));
+    return {
+      savedAt: new Date().toISOString(),
+      site: val('empSite'), machine: val('empMachine'), carReg: val('carReg'),
+      bank: { holder: val('bankHolder'), bank: val('bankName'), acc: val('bankAcc'), type: currentBankType },
+      km, other,
+      proofCount: otherBody.querySelectorAll('.odo-thumb').length
+    };
+  }
+  function draftHasContent(d) {
+    // The currency box always holds ZAR, so it never counts as something typed in.
+    const filled = (r, skip) => Object.keys(r).some(k => (skip || []).indexOf(k) === -1 && String(r[k] || '').trim() !== '');
+    return !!(d.site || d.machine || d.carReg
+      || d.km.some(r => filled(r))
+      || d.other.some(r => filled(r, ['currency'])));
+  }
+  function saveDraft() {
+    const d = collectDraft();
+    if (!draftHasContent(d)) { showToast('There is nothing to save yet — fill something in first.', 4000); return; }
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
+      showToast(d.proofCount
+        ? 'Draft saved. Your attached proofs cannot be saved with it, so you will need to attach them again.'
+        : 'Draft saved on this device. Reopen the app to carry on where you left off.', 6000);
+    } catch (e) {
+      showToast('Could not save the draft — this device is out of storage space.', 5000);
+    }
+  }
+  function readDraft() {
+    try { const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); return (d && d.km && d.other) ? d : null; }
+    catch (e) { return null; }
+  }
+  function clearDraft() {
+    try { localStorage.removeItem(DRAFT_KEY); } catch (e) {}
+    if (draftBanner) draftBanner.classList.add('hidden');
+  }
+  function applyDraft(d) {
+    setVal('empSite', d.site); setVal('empMachine', d.machine); setVal('carReg', d.carReg);
+    if (d.bank) {
+      setVal('bankHolder', d.bank.holder); setVal('bankName', d.bank.bank); setVal('bankAcc', d.bank.acc);
+      currentBankType = d.bank.type === 'other' ? 'other' : 'main';
+      if (bankTypeSel) bankTypeSel.value = currentBankType;
+      updateBankHint();
+    }
+    kmBody.innerHTML = '';
+    (d.km.length ? d.km : [{}]).forEach(r => { addRow('km'); fillKmRow(kmBody.lastElementChild, r); });
+    otherBody.innerHTML = '';
+    // No hasProof on a draft row, so a restored line still has to have its receipt attached.
+    (d.other.length ? d.other : [{}]).forEach(r => { addRow('other'); fillOtherRow(otherBody.lastElementChild, r); });
+    recalc();
+  }
+
+  const draftBanner = document.getElementById('draftBanner');
+  function showDraftBanner(d) {
+    if (!draftBanner) return;
+    document.getElementById('draftBannerText').textContent =
+      'You saved a draft on ' + fmtDateTime(d.savedAt) + '.'
+      + (d.proofCount ? ' Its ' + d.proofCount + ' attached proof' + (d.proofCount > 1 ? 's' : '') + ' will need to be attached again.' : '');
+    draftBanner.classList.remove('hidden');
+  }
+  const saveDraftBtn = document.getElementById('saveDraftBtn');
+  if (saveDraftBtn) saveDraftBtn.addEventListener('click', saveDraft);
+  const draftRestoreBtn = document.getElementById('draftRestore');
+  if (draftRestoreBtn) draftRestoreBtn.addEventListener('click', () => {
+    const d = readDraft();
+    if (!d) { clearDraft(); return; }
+    applyDraft(d);
+    draftBanner.classList.add('hidden');
+    showToast('Draft restored.', 3500);
+  });
+  const draftDiscardBtn = document.getElementById('draftDiscard');
+  if (draftDiscardBtn) draftDiscardBtn.addEventListener('click', () => {
+    showConfirm('Discard the saved draft? Anything in it that you have not restored will be lost.', () => {
+      clearDraft();
+      showToast('Draft discarded.', 3000);
+    });
+  });
 
   function resetForm() {
     kmBody.innerHTML = ''; addRow('km'); addRow('km');
@@ -1884,6 +1982,10 @@
 
   // render the Previous Claims table (from saved history)
   renderPrev();
+
+  // offer back any draft left from a previous visit
+  const savedDraft = readDraft();
+  if (savedDraft) showDraftBanner(savedDraft);
 
   // fetch today's currency rates
   fetchRates();
