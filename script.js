@@ -681,7 +681,7 @@
   })();
 
   // Machine list (cost-allocation dimension) — from Finance's custom financial dimension list.
-  const MACHINES = ["Overheads", "009-A", "009-B", "009-C", "009-D", "009-E", "009-F", "009-G", "009-H", "009-I", "009-J", "009-P", "73R-DC", "24R", "41R", "41R-A", "41R-B", "41R-S", "43R-A ATL", "52R-A", "52R-B", "52R-C", "52R-E", "LP200-E", "LP200-F", "52R-I", "52R-J", "52R-K", "52R-M", "53R", "61R-A", "61R-B", "61R-C", "61R-D", "61R-E BALUBA", "61R-K", "61R-M", "61R-N", "61R-S", "61R-Z", "61R-ZC", "61R-ZD", "71R-A", "71R-B", "71R-BOESMAN", "71R-GATIEP", "71R-GHANA", "71R-M", "71R-N", "71R-O", "71R-P", "71R-Q", "71R-S", "71R-T", "71R-TS", "71R-Y (PAT)", "72R-A", "72R-L", "RD3-250LG", "73R-MUGABE", "DD52", "Bauer BG20 ADD", "BHB", "LP200-G", "LP200-I", "LP200-J", "Bauer BG28", "DD39 (M)", "MDX-308", "MDX-302", "MDX-309", "MDX-400", "MDX-311", "MDX-312", "MDX-314", "MDX-315", "MDX-316", "MDX-317", "MDX-318", "MDX-319", "MDX-320", "MDX-310", "MDX-321", "MDX-401", "DRESSER", "DTH-A", "DTH-B", "Gripper", "HG380", "LM-90-1", "LM-90-2", "LP200-A", "MD150-B", "MD150-C", "MD150-D", "MD150-E", "LM-90-3", "LM-90-4", "Orelyzer", "RBM6", "RBM6-M", "RBM7-1", "RBM7-2", "MDX-600", "MDX-601", "MDX-603", "RD1000", "RD2000-A", "RD2000-B", "RD2000-C", "RD2000-D", "RD3-250 LENA", "RD3-250A", "RD3-250B", "RD3-250C", "RD3-250D", "RD3-250E", "RD3-250F", "RD3-250G", "RD3-250H", "RD3A-250I", "RD3A-250J", "RD3A-250K", "RD3A-250L", "RD3A-250N", "RD3A-250O", "RD3A-250P", "RD3A-250Q", "RD3A-250R", "RD3A-250S", "RD3A-250T", "RD3A-250U", "RD3A-250V", "RD5-550D", "RD5-550E", "RD5-550G", "RD7-150B", "RD7-150C", "RD8-1500", "Stage", "ROBOT AMBILICAL - Spinnekop", "ROBOT SELF SUPPORT_ROSS & ROSIE", "ROBOT SHOTCRETE - Rabobi", "MDX-701", "MDX-702", "MDX-700", "UG60-001", "UG60-010", "UG60-015", "UG60-003", "RD3A-250MX", "43R-B", "RD11D-A", "RD11D-B ATL", "LM-30-1", "RD5-550H", "52R-F", "52R-N ATL", "52R-O ATL", "61R-O ATL", "71R-D ATL", "71R-E ATL", "RHINO 1000 2006 ATL", "RHINO 1000 2007 ATL", "RHINO 1000 2008 ATL", "RM12 ATL", "71R-C ATL", "61R-F", "MTB 0550-01", "LP200-B", "190 AMV", "43R", "LP200-C", "61R-R ATL", "82R-A ATL", "RD11D-C ATL", "Indau 250 HYD H1", "Indau 250 HYD H2", "Indau 500H M1", "Indau 500H M2", "Indau 500H M3", "Indau 500H M4", "Indau 90", "Rhino 1000 DC Bregenz", "Rhino 1000 DC Hoijer", "Rhino 1000 DC Kiruna", "Rhino 2000 DC", "RM10 ATL", "RM8 ATL", "RM7 ATL", "Robbins 61 AC", "Robbins R91 R1", "Robbins R91 R2", "Robbins R91 R3", "Robbins R91 R5", "LP200-D", "009-K", "MDX LY40", "MDX-322", "61R-P ATL", "61R-Q ATL", "RD6-A", "Robbins R91 R4", "RD3A-250M", "SBM11.5-2000", "MDX-324-UG", "009-L", "RC-01", "RC-02", "MDX-602", "RC-04", "RC-05", "MDX LY17", "MDX LY19", "MDX LY20", "MDX-324", "MDX-328", "MDX V013", "MDX-329", "MDX C45", "MDX C46", "MDX-327", "MDX LY32", "MDX LY26", "MDX LY34", "MDX LY23", "MDX LY27", "MDX LY24", "MDX LY44", "MDX-331", "MDX LY29", "MDX LY41", "UG-MEA002", "UG-MEH003", "SD-750 - Cargill", "009-M", "DD02", "MDX C03", "MDX LY06", "MDX V011", "MDX LY12", "MDX LY14", "MDX B015", "MDX V018", "MDX LY21", "MDX LY22", "MDX V025", "MDX LY31", "MDX LY33", "MDX LY38", "MDX LY42", "MDX DD043-AC01", "MDX LY47", "MDX L048", "MDX 604", "MDX 703-001", "MDX 704-002", "MDX 705-003", "MDX 706-004", "MDX 707-005", "Robot Shotcrete Doble Boquilla", "Robot Shotcrete Centrifugo 1", "MDX-708", "RD6-B", "MDX-323", "MDX-709", "MDX-900", "MDX-901", "DD039", "MDX-402", "MDX-403", "SCMREC-001", "SCMREC-002", "SCMREC-003", "SCMREC-004", "SCMREC-005", "91R-3", "91R-4", "RUCDR", "SBS", "ARM-Machine", "RBR 900", "009-O", "RD7-1000-A", "RD7-1000-B", "LP200-K", "LP200-L", "LP200-M", "LP200-N", "VectorZIEL800", "VectorEXAKT900", "LM-110-01", "LM-110-02", "LM-110-03", "53R-GH-1", "Shotcrete Robot - Spinnekop", "Shotcrete Robot - Mass 1", "73R-GH-1", "73R-GH-2", "73R-GH-3", "LM-110-04", "LM-110-05", "53R-GH-2", "RD8-1000-B", "LP100-A", "RD7-1000-C", "MDX-434", "MDX-711", "MDX-712", "RD3A-250W", "THOR 1200", "97R-GH-01", "RD6-DC-A", "RD6-DC-B", "RD6-DC-C", "VIP-01", "VIP-02", "009-N", "MDX-713", "SCMREC-006", "MDX-705", "RD5-550F", "MDX-714", "MDX-717", "All Machines 2020", "HCU01", "HCU02", "HCU03", "HCU04", "HCU05", "HC22", "HC33", "HC34", "HC35", "HC41", "HC43", "HC45", "HC48", "HC52", "HC60", "HC70", "HC17", "HC23", "HC31", "HC32", "HC42", "HC46", "HC50", "HC53", "HC59", "HC68", "HC69", "HC71", "Crawler-3 - CRW-20/3 (Chile)", "Crawler-4 - CRW-20/4 (Chile)", "DumperCrawler - Dump-01 (Chile)", "Crawler-6 - CRW20/6 (Chile)", "HC71 (Hall Core)", "ARM Project", "PCD", "Komatsu Project", "Consortium", "MDX-408", "73R_Anglo Gold Ashanti", "MDX-404", "MDX-405", "Van Zyl-Sonic Drilling", "Van Zyl-Reverse Circulation Drilling", "Van Zyl-Percussion Drilling", "Van Zyl-Diamond Drilling", "MDX-325", "MDX-326", "GOB PD01", "MDX-710", "Trio Drilling", "LP200-H", "MTB-Repmain-1623", "MTB-BOK-WV-001-OPE", "MTB-BOK-WV-001-PMI", "MTB-BOK-WV-001-SVI", "MTB-BOK-WV-002-OPE", "MTB-BOK-WV-002-SEQ", "MTB-BOK-WV-003-SEQ", "MTB-BOK-WV-004-SEQ", "SBS-ETUN-00004", "SBS-ETUN-00005", "SBS-ETUN-00005-1", "SBS-ETUN-00016", "RBS-ETUN-00010", "RBS-ETUN-00017", "SBS-ETUN-00018"];
+  const MACHINES = ["Overheads", "009-A", "009-B", "009-C", "009-D", "009-E", "009-F", "009-G", "009-H", "009-I", "009-J", "009-P", "73R-DC", "24R", "41R", "41R-A", "41R-B", "41R-S", "43R-A ATL", "52R-A", "52R-B", "52R-C", "52R-E", "LP200-E", "LP200-F", "52R-I", "52R-J", "52R-K", "52R-M", "53R", "61R-A", "61R-B", "61R-C", "61R-D", "61R-E BALUBA", "61R-K", "61R-M", "61R-N", "61R-S", "61R-Z", "61R-ZC", "61R-ZD", "71R-A", "71R-B", "71R-BOESMAN", "71R-GATIEP", "71R-GHANA", "71R-M", "71R-N", "71R-O", "71R-P", "71R-Q", "71R-S", "71R-T", "71R-TS", "71R-Y (PAT)", "72R-A", "72R-L", "RD3-250LG", "73R-MUGABE", "DD52", "Bauer BG20 ADD", "BHB", "LP200-G", "LP200-I", "LP200-J", "Bauer BG28", "DD39 (M)", "MDX-308", "MDX-302", "MDX-309", "MDX-400", "MDX-311", "MDX-312", "MDX-314", "MDX-315", "MDX-316", "MDX-317", "MDX-318", "MDX-319", "MDX-320", "MDX-310", "MDX-321", "MDX-401", "DRESSER", "DTH-A", "DTH-B", "Gripper", "HG380", "LM-90-1", "LM-90-2", "LP200-A", "MD150-B", "MD150-C", "MD150-D", "MD150-E", "LM-90-3", "LM-90-4", "Orelyzer", "RBM6", "RBM6-M", "RBM7-1", "RBM7-2", "MDX-600", "MDX-601", "MDX-603", "RD1000", "RD2000-A", "RD2000-B", "RD2000-C", "RD2000-D", "RD3-250 LENA", "RD3-250A", "RD3-250B", "RD3-250C", "RD3-250D", "RD3-250E", "RD3-250F", "RD3-250G", "RD3-250H", "RD3A-250I", "RD3A-250J", "RD3A-250K", "RD3A-250L", "RD3A-250N", "RD3A-250O", "RD3A-250P", "RD3A-250Q", "RD3A-250R", "RD3A-250S", "RD3A-250T", "RD3A-250U", "RD3A-250V", "RD5-550D", "RD5-550E", "RD5-550G", "RD7-150B", "RD7-150C", "RD8-1500", "Stage", "ROBOT AMBILICAL - Spinnekop", "ROBOT SELF SUPPORT_ROSS & ROSIE", "ROBOT SHOTCRETE - Rabobi", "MDX-701", "MDX-702", "MDX-700", "UG60-001", "UG60-010", "UG60-015", "UG60-003", "RD3A-250MX", "43R-B", "RD11D-A", "RD11D-B ATL", "LM-30-1", "RD5-550H", "52R-F", "52R-N ATL", "52R-O ATL", "61R-O ATL", "71R-D ATL", "71R-E ATL", "RHINO 1000 2006 ATL", "RHINO 1000 2007 ATL", "RHINO 1000 2008 ATL", "RM12 ATL", "71R-C ATL", "61R-F", "MTB 0550-01", "LP200-B", "190 AMV", "43R", "LP200-C", "61R-R ATL", "82R-A ATL", "RD11D-C ATL", "Indau 250 HYD H1", "Indau 250 HYD H2", "Indau 500H M1", "Indau 500H M2", "Indau 500H M3", "Indau 500H M4", "Indau 90", "Rhino 1000 DC Bregenz", "Rhino 1000 DC Hoijer", "Rhino 1000 DC Kiruna", "Rhino 2000 DC", "RM10 ATL", "RM8 ATL", "RM7 ATL", "Robbins 61 AC", "Robbins R91 R1", "Robbins R91 R2", "Robbins R91 R3", "Robbins R91 R5", "LP200-D", "009-K", "MDX LY40", "MDX-322", "61R-P ATL", "61R-Q ATL", "RD6-A", "Robbins R91 R4", "RD3A-250M", "SBM11.5-2000", "MDX-324-UG", "009-L", "RC-01", "RC-02", "MDX-602", "RC-04", "RC-05", "MDX LY17", "MDX LY19", "MDX LY20", "MDX-324", "MDX-328", "MDX V013", "MDX-329", "MDX C45", "MDX C46", "MDX-327", "MDX LY32", "MDX LY26", "MDX LY34", "MDX LY23", "MDX LY27", "MDX LY24", "MDX LY44", "MDX-331", "MDX LY29", "MDX LY41", "UG-MEA002", "UG-MEH003", "SD-750 - Cargill", "009-M", "DD02", "MDX C03", "MDX LY06", "MDX V011", "MDX LY12", "MDX LY14", "MDX B015", "MDX V018", "MDX LY21", "MDX LY22", "MDX V025", "MDX LY31", "MDX LY33", "MDX LY38", "MDX LY42", "MDX DD043-AC01", "MDX LY47", "MDX L048", "MDX 604", "MDX 703-001", "MDX 704-002", "MDX 705-003", "MDX 706-004", "MDX 707-005", "Robot Shotcrete Doble Boquilla", "Robot Shotcrete Centrifugo 1", "MDX-708", "RD6-B", "MDX-323", "MDX-709", "MDX-900", "MDX-901", "DD039", "MDX-402", "MDX-403", "SCMREC-001", "SCMREC-002", "SCMREC-003", "SCMREC-004", "SCMREC-005", "91R-3", "91R-4", "RUCDR", "SBS", "ARM-Machine", "RBR 900", "009-O", "RD7-1000-A", "RD7-1000-B", "LP200-K", "LP200-L", "LP200-M", "LP200-N", "VectorZIEL800", "VectorEXAKT900", "LM-110-01", "LM-110-02", "LM-110-03", "53R-GH-1", "Shotcrete Robot - Spinnekop", "Shotcrete Robot - Mass 1", "73R-GH-1", "73R-GH-2", "73R-GH-3", "LM-110-04", "LM-110-05", "53R-GH-2", "RD8-1000-B", "LP100-A", "RD7-1000-C", "MDX-434", "MDX-711", "MDX-712", "RD3A-250W", "THOR 1200", "97R-GH-01", "RD6-DC-A", "RD6-DC-B", "RD6-DC-C", "VIP-01", "VIP-02", "009-N", "MDX-713", "SCMREC-006", "MDX-705", "RD5-550F", "MDX-714", "MDX-717", "All Machines 2020", "HCU01", "HCU02", "HCU03", "HCU04", "HCU05", "HC22", "HC33", "HC34", "HC35", "HC41", "HC43", "HC45", "HC48", "HC52", "HC60", "HC70", "HC17", "HC23", "HC31", "HC32", "HC42", "HC46", "HC50", "HC53", "HC59", "HC68", "HC69", "HC71", "Crawler-3 - CRW-20/3 (Chile)", "Crawler-4 - CRW-20/4 (Chile)", "DumperCrawler - Dump-01 (Chile)", "Crawler-6 - CRW20/6 (Chile)", "HC71 (Hall Core)", "ARM Project", "PCD", "Komatsu Project", "Consortium", "MDX-408", "73R_Anglo Gold Ashanti", "MDX-404", "MDX-405", "Van Zyl-Sonic Drilling", "Van Zyl-Reverse Circulation Drilling", "Van Zyl-Percussion Drilling", "Van Zyl-Diamond Drilling", "MDX-325", "MDX-326", "GOB PD01", "MDX-710", "Trio Drilling", "LP200-H", "MTB-Repmain-1623"];
   (function () {
     const input = document.getElementById('empMachine');
     const list = document.getElementById('machineList');
@@ -1268,6 +1268,8 @@
     applySessionUser();
     setVal('empSite', c.employee.site);
     setVal('empMachine', c.employee.machine);
+    setVal('empProject', c.employee.project);
+    setVal('empCostCentre', c.employee.costCentre);
     setVal('carReg', c.employee.carReg);
     setVal('bankHolder', c.banking.holder);
     setVal('bankName', c.banking.bank);
@@ -1391,7 +1393,8 @@
       stage: 1, // 0 filled in · 1 submitted to HOD · 2 submitted for payment · 3 paid
       employee: {
         name: val('empName'), surname: val('empSurname'), number: val('empNumber'), email: val('empEmail'),
-        site: val('empSite'), machine: val('empMachine'), carReg: val('carReg')
+        site: val('empSite'), machine: val('empMachine'), project: val('empProject'),
+        costCentre: val('empCostCentre'), carReg: val('carReg')
       },
       banking: {
         holder: val('bankHolder'), bank: val('bankName'), acc: val('bankAcc'),
@@ -1424,7 +1427,8 @@
     }));
     return {
       savedAt: new Date().toISOString(),
-      site: val('empSite'), machine: val('empMachine'), carReg: val('carReg'),
+      site: val('empSite'), machine: val('empMachine'), project: val('empProject'),
+      costCentre: val('empCostCentre'), carReg: val('carReg'),
       bank: { holder: val('bankHolder'), bank: val('bankName'), acc: val('bankAcc'), type: currentBankType },
       km, other,
       proofCount: otherBody.querySelectorAll('.odo-thumb').length
@@ -1433,7 +1437,7 @@
   function draftHasContent(d) {
     // The currency box always holds ZAR, so it never counts as something typed in.
     const filled = (r, skip) => Object.keys(r).some(k => (skip || []).indexOf(k) === -1 && String(r[k] || '').trim() !== '');
-    return !!(d.site || d.machine || d.carReg
+    return !!(d.site || d.machine || d.project || d.costCentre || d.carReg
       || d.km.some(r => filled(r))
       || d.other.some(r => filled(r, ['currency'])));
   }
@@ -1458,7 +1462,7 @@
     if (draftBanner) draftBanner.classList.add('hidden');
   }
   function applyDraft(d) {
-    setVal('empSite', d.site); setVal('empMachine', d.machine); setVal('carReg', d.carReg);
+    setVal('empSite', d.site); setVal('empMachine', d.machine); setVal('empProject', d.project); setVal('empCostCentre', d.costCentre); setVal('carReg', d.carReg);
     if (d.bank) {
       setVal('bankHolder', d.bank.holder); setVal('bankName', d.bank.bank); setVal('bankAcc', d.bank.acc);
       currentBankType = d.bank.type === 'other' ? 'other' : 'main';
@@ -1538,6 +1542,8 @@
       row2('Employee number', c.employee.number) +
       row2('Email', c.employee.email) + row2('Site', c.employee.site) +
       row2('Machine', c.employee.machine) +
+      row2('Project', c.employee.project) +
+      row2('Cost centre', c.employee.costCentre) +
       row2('Car registration', c.employee.carReg) + '</table>';
 
     h += '<h4>Banking details</h4><table class="detail-kv">' +
@@ -1652,6 +1658,7 @@
         ['Employee Name', fullName(c.employee) || '—', 'Employee Number', c.employee.number || '—'],
         ['Email', c.employee.email || '—', 'Date', fmtDate(c.submitted)],
         ['Site', c.employee.site || '—', 'Machine', c.employee.machine || '—'],
+        ['Project', c.employee.project || '—', 'Cost Centre', c.employee.costCentre || '—'],
         ['Car Registration Number', c.employee.carReg || '—', '', '']
       ],
       columnStyles: { 0: { fontStyle: 'bold', fillColor: [245, 245, 245] }, 2: { fontStyle: 'bold', fillColor: [245, 245, 245] } },
@@ -1759,9 +1766,133 @@
   }
 
   /* ===== Admin: editable sites, machines and km rate (persisted in this browser) ===== */
+  // Cost centres (cost-allocation dimension) — from Finance's cost centre list.
+  const DEFAULT_COST_CENTRES = [
+    "CC0000 - Balance Sheet",
+    "CC1005 - Operational",
+    "CC1010 - Establishment",
+    "CC1015 - Piloting",
+    "CC1020 - Reaming/Hook up",
+    "CC1025 - Reaming",
+    "CC1030 - Disasembly",
+    "CC1035 - Transport",
+    "CC1040 - Technology Sales",
+    "CC1045 - Sales Rental Machine",
+    "CC1050 - Sales Rental Crawler",
+    "CC1055 - Sales of Stock",
+    "CC1060 - Regional Activities",
+    "CC1065 - Sales of Services",
+    "CC1070 - Employees on Standby",
+    "CC1100 - New Technology",
+    "CC1101 - New Technologies - MTB",
+    "CC1102 - New Technologies - SBS",
+    "CC1103 - New Technologies - RBS",
+    "CC1105 - AVA Solutions",
+    "CC2005 - Cutters",
+    "CC2010 - Depreciation, Amortization and Impairments",
+    "CC2015 - Engineering Control and Instrumentation",
+    "CC2020 - Engineering Design Office",
+    "CC2025 - Engineering Support",
+    "CC2027 - Technical Office",
+    "CC2030 - Financial Value Adjustments",
+    "CC2035 - Inventory Rework & Manufacturing",
+    "CC2040 - Inventory Value Adjustments",
+    "CC2045 - Motor Vehicles",
+    "CC2050 - Operational Management",
+    "CC2055 - Operational Overheads",
+    "CC2056 - Operational Overheads-Employees suspended",
+    "CC2057 - Procurement, warehouse and transport",
+    "CC2060 - Research & Development",
+    "CC2065 - Research & Development - Projects",
+    "CC2070 - SHEQT - COS",
+    "CC2075 - Training",
+    "CC2080 - Yard",
+    "CC2085 - WORKSHOP",
+    "CC2090 - Scheduled Maintenance",
+    "CC2095 - MD Namibia",
+    "CC3010 - Business Development",
+    "CC3020 - Centre of Excellence (Information Technology)",
+    "CC3025 - ERP Project Expenses",
+    "CC3030 - Corporate Social Investment",
+    "CC3031 - Corporate Social Investment-Young Apprentice",
+    "CC3040 - Finance Management",
+    "CC3041 - Finance Management-General Manager",
+    "CC3050 - Head Office & Administration",
+    "CC3051 - Head Office & Administration - A&R",
+    "CC3055 - Rancagua Office",
+    "CC3056 - Head Office Travel Expenses",
+    "CC3057 - Project Management Office",
+    "CC3060 - Human Resources Management",
+    "CC3065 - SHEQ-Overheads",
+    "CC3070 - Commercial Office",
+    "CC3075 - Marketing & Public Relations",
+    "CC3080 - Profit and loss on sale of fixed assets",
+    "CC3090 - Risk, Legal & Assurance",
+    "CC3095 - Social Services Office",
+    "CC3100 - Social Project-Safe House",
+    "CC3110 - Transport",
+    "CC3115 - Security Department",
+    "CC3120 - Buildings",
+    "CC4050 - Dividends Paid",
+    "CC4100 - Equity Accounted Investment_Disposal of Associate",
+    "CC4150 - Equity Accounted Investment_Share of (loss)/profit",
+    "CC4200 - Fair Value Adjustment",
+    "CC4250 - Finance Income & Charges",
+    "CC4300 - Foreign Exchange",
+    "CC4350 - Royalties Income",
+    "CC4400 - Share of Profit in Joint Venture",
+    "CC4450 - Taxes",
+    "CC4455 - Taxes - Brazil",
+    "CC5100 - Inter Company Accounting Transactions",
+    "CC5200 - Intercompany Inventory",
+    "CC5300 - Intercompany Recoveries",
+    "CC5400 - Intercompany Transactions",
+    "CC5500 - Related Parties",
+    "CC5600 - Related Party Recoveries",
+    "CC5700 - Rentals_Intercompany",
+    "CC5800 - Intercompany Recoveries - Fixed Assets Transactions",
+    "CC6005 - Retail - A&R",
+    "CC6050 - 3rd Party Retail",
+    "CC7100 - ZUBLIN INTERNATIONAL GMBH CHILE SPA",
+    "CC7101 - ACCIONA CONSTRUCCION S.A. AGENCIA CHILE",
+    "CC7102 - MAX RENTAL SPA",
+    "CC7103 - GEOVIDA SPA",
+    "CC7104 - FMT-BBOSCH SPA",
+    "CC7105 - GEOROCK SPA",
+    "CC7106 - CONSTRUCTORA GARDILCIC LTDA",
+    "CC7107 - BORMAX SPA",
+    "CC7108 - EMPRESA DE MONTAJES INDUSTRIALES SALFA S A",
+    "CC7109 - COMUNICACIONES Y TECNOLOGIA S A",
+    "CC7110 - ALMAR WATER SERVICIOS LATAM S.A.",
+    "CC7111 - MAQUINARIAS Y EQUIPOS MAQSA S A",
+    "CC7112 - FMT CHILE SPA",
+    "CC7113 - BESALCO",
+    "CC7114 - EMPRESA DE MANTENCIONES Y SERVICIOS SALFA S.A.",
+    "CC7115 - SOCIEDAD COMERCIAL COLORADO LTDA",
+    "CC7116 - MIES SERVICIOS INTEGRALES LIMITADAs (Chile)",
+    "CC7117 - Master Drilling",
+    "CC7118 - Besalco Maquinarias",
+    "CC7119 - DMC Mining Service Chile",
+    "CC7120 - SOCIEDAD AGRICOLA Y FORESTAL JIMENEZ Y MUNOZ LTDA",
+    "CC7121 - SYNCORE MONTAJE",
+    "CC7122 - BAILAC SERVICIOS EN AHORROS DE NEUMATICOS LIMITADA",
+    "CC7123 - STAVIC ARRIENDOS LTDA"
+  ];
+  let COST_CENTRES = DEFAULT_COST_CENTRES.slice();
+
+  // Projects (cost-allocation dimension) — kept apart from machines so a claim can be
+  // booked against a project without pretending it belongs to a rig.
+  const DEFAULT_PROJECTS = [
+    'MTB-BOK-WV-001-OPE', 'MTB-BOK-WV-001-PMI', 'MTB-BOK-WV-001-SVI',
+    'MTB-BOK-WV-002-OPE', 'MTB-BOK-WV-002-SEQ', 'MTB-BOK-WV-003-SEQ', 'MTB-BOK-WV-004-SEQ',
+    'RBS-ETUN-00010', 'RBS-ETUN-00017',
+    'SBS-ETUN-00004', 'SBS-ETUN-00005', 'SBS-ETUN-00005-1', 'SBS-ETUN-00016', 'SBS-ETUN-00018'
+  ];
+  let PROJECTS = DEFAULT_PROJECTS.slice();
+
   const DEFAULT_SITES = ['Venetia', 'ARM', 'Styldrift', 'Lonmin', 'Thembelani', 'PMC', 'Ivan Plats', 'Zondereinde', 'Cullinan', 'Finsch', 'South Deep', 'Evander', 'Sasol Kromdraai', 'Sasol Bokamoso', 'Rosh Pina', 'Fochville Head Office'];
   let SITES = DEFAULT_SITES.slice();
-  const CONFIG_VERSION = 4; // bump when the built-in site or machine list changes so saved copies refresh
+  const CONFIG_VERSION = 5; // bump when the built-in site or machine list changes so saved copies refresh
 
   // HR contacts shown on the Policy page and used by the policy assistant's fallback.
   const DEFAULT_CONTACTS = [
@@ -1799,12 +1930,33 @@
       if (cfg.version !== CONFIG_VERSION) {
         const have = new Set(saved.map(m => String(m).toLowerCase()));
         MACHINES.forEach(m => { if (!have.has(m.toLowerCase())) saved.push(m); });
+        // Codes that have since become projects must leave the machine list behind them.
+        const isProject = new Set(DEFAULT_PROJECTS.map(p => p.toLowerCase()));
+        for (let i = saved.length - 1; i >= 0; i--) {
+          if (isProject.has(String(saved[i]).toLowerCase())) saved.splice(i, 1);
+        }
       }
       MACHINES.length = 0; saved.forEach(m => MACHINES.push(m));
     }
+    if (Array.isArray(cfg.projects) && cfg.projects.length) {
+      const saved = cfg.projects.slice();
+      if (cfg.version !== CONFIG_VERSION) {
+        const have = new Set(saved.map(p => String(p).toLowerCase()));
+        DEFAULT_PROJECTS.forEach(p => { if (!have.has(p.toLowerCase())) saved.push(p); });
+      }
+      PROJECTS = saved;
+    }
+    if (Array.isArray(cfg.costCentres) && cfg.costCentres.length) {
+      const saved = cfg.costCentres.slice();
+      if (cfg.version !== CONFIG_VERSION) {
+        const have = new Set(saved.map(c => String(c).toLowerCase()));
+        DEFAULT_COST_CENTRES.forEach(c => { if (!have.has(c.toLowerCase())) saved.push(c); });
+      }
+      COST_CENTRES = saved;
+    }
     if (Array.isArray(cfg.contacts) && cfg.contacts.length) CONTACTS = cfg.contacts.map(c => Object.assign({}, c));
     if (typeof cfg.kmRate === 'number' && cfg.kmRate > 0) KM_RATE = cfg.kmRate;
-    sortSites(); sortMachines();
+    sortSites(); sortMachines(); sortProjects(); COST_CENTRES.sort(byName);
     saveConfig(); // re-save under the current version, in order
   }
   /* ---- Ordering ----
@@ -1813,6 +1965,7 @@
      pinned at the top of the machines: it is the default when a claim has no machine. */
   const byName = (a, b) => String(a).localeCompare(String(b), 'en', { numeric: true, sensitivity: 'base' });
   function sortSites() { SITES.sort(byName); }
+  function sortProjects() { PROJECTS.sort(byName); }
   function sortMachines() {
     MACHINES.sort((a, b) => {
       const ao = String(a).toLowerCase() === 'overheads', bo = String(b).toLowerCase() === 'overheads';
@@ -1822,7 +1975,7 @@
   }
 
   function saveConfig() {
-    try { localStorage.setItem('mdg-config', JSON.stringify({ version: CONFIG_VERSION, sites: SITES, machines: MACHINES, contacts: CONTACTS, kmRate: KM_RATE })); } catch (e) {}
+    try { localStorage.setItem('mdg-config', JSON.stringify({ version: CONFIG_VERSION, sites: SITES, machines: MACHINES, projects: PROJECTS, costCentres: COST_CENTRES, contacts: CONTACTS, kmRate: KM_RATE })); } catch (e) {}
   }
 
   // Render the contacts shown on the Policy page.
@@ -1855,6 +2008,54 @@
   }
 
   // Type-ahead combobox for Site, constrained to the SITES list (admin-editable).
+  // Project and cost centre behave like the site and machine boxes, except that leaving
+  // them blank is allowed — not every disbursement belongs to a project or a cost centre.
+  function initOptionalCombo(inputId, listId, getItems, emptyText) {
+    const input = document.getElementById(inputId);
+    const list = document.getElementById(listId);
+    if (!input || !list) return;
+    let shown = [];
+    let activeIdx = -1;
+    function render() {
+      const q = input.value.trim().toLowerCase();
+      const items = getItems();
+      shown = q ? items.filter(p => p.toLowerCase().includes(q)) : items;
+      activeIdx = -1;
+      list.innerHTML = shown.length
+        ? shown.map((p, i) => '<div class="combo-opt" data-i="' + i + '">' + escapeHtml(p) + '</div>').join('')
+        : '<div class="combo-empty">' + emptyText + '</div>';
+      list.classList.remove('hidden');
+    }
+    function choose(p) { input.value = p; list.classList.add('hidden'); }
+    function highlight() {
+      const opts = list.querySelectorAll('.combo-opt');
+      opts.forEach((o, i) => o.classList.toggle('active', i === activeIdx));
+      if (opts[activeIdx]) opts[activeIdx].scrollIntoView({ block: 'nearest' });
+    }
+    input.addEventListener('focus', render);
+    input.addEventListener('input', render);
+    input.addEventListener('keydown', e => {
+      const opts = list.querySelectorAll('.combo-opt');
+      if (e.key === 'ArrowDown') { e.preventDefault(); if (!opts.length) return; activeIdx = Math.min(activeIdx + 1, opts.length - 1); highlight(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); if (!opts.length) return; activeIdx = Math.max(activeIdx - 1, 0); highlight(); }
+      else if (e.key === 'Enter') { if (activeIdx >= 0 && shown[activeIdx]) { e.preventDefault(); choose(shown[activeIdx]); } }
+      else if (e.key === 'Escape') { list.classList.add('hidden'); }
+    });
+    list.addEventListener('mousedown', e => {
+      const opt = e.target.closest('.combo-opt');
+      if (!opt) return;
+      e.preventDefault();
+      choose(shown[+opt.dataset.i]);
+    });
+    input.addEventListener('blur', () => {
+      setTimeout(() => {
+        list.classList.add('hidden');
+        // Blank is allowed; anything that is not on the list is not.
+        if (input.value && getItems().indexOf(input.value) === -1) input.value = '';
+      }, 150);
+    });
+  }
+
   function initSiteCombo() {
     const input = document.getElementById('empSite');
     const list = document.getElementById('siteList');
@@ -1992,6 +2193,8 @@
   writeBankFields(bankProfiles.main);
   updateBankHint();
   initSiteCombo();
+  initOptionalCombo('empProject', 'projectList', () => PROJECTS, 'No matching project');
+  initOptionalCombo('empCostCentre', 'costCentreList', () => COST_CENTRES, 'No matching cost centre');
   renderContacts();
   renderAdminContacts();
   renderAdminSites();
