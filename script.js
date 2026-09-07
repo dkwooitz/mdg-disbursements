@@ -196,14 +196,13 @@
   });
 
   /* ---- Tabs ---- */
+  function switchTab(which) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === which));
+    document.getElementById('tab-km').classList.toggle('hidden', which !== 'km');
+    document.getElementById('tab-other').classList.toggle('hidden', which !== 'other');
+  }
   document.querySelectorAll('.tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-      const which = tab.dataset.tab;
-      document.getElementById('tab-km').classList.toggle('hidden', which !== 'km');
-      document.getElementById('tab-other').classList.toggle('hidden', which !== 'other');
-    });
+    tab.addEventListener('click', () => switchTab(tab.dataset.tab));
   });
 
   /* ---- Rows ---- */
@@ -217,7 +216,7 @@
       '<td data-label="To"><input type="text" placeholder="To"></td>' +
       '<td data-label="Kilometres"><input type="number" min="0" step="1" placeholder="0" class="km-input"></td>' +
       '<td class="col-amt" data-label="Amount (R)"><span class="amt-cell">R 0,00</span></td>' +
-      '<td class="col-odo" data-label="Odometer">' +
+      '<td class="col-odo" data-label="Odometer (optional)">' +
         '<input type="file" accept="image/*" class="odo-input" hidden>' +
         '<button type="button" class="odo-btn" title="Upload proof of the trip">' +
           '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.4"/></svg>' +
@@ -239,7 +238,7 @@
         '</div>' +
         '<div class="zar-line"><span class="zar-eq">R 0,00</span><span class="rate-note"></span></div>' +
       '</td>' +
-      '<td class="col-odo" data-label="Proof">' +
+      '<td class="col-odo" data-label="Proof — required">' +
         '<input type="file" accept="image/*" class="odo-input" hidden>' +
         '<button type="button" class="odo-btn" title="Upload proof of claim">' +
           '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-2-1.3-2 1.3-2-1.3-2 1.3-2-1.3L6 21z"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="9" y1="12" x2="15" y2="12"/></svg>' +
@@ -252,6 +251,29 @@
 
   const kmBody = document.getElementById('km-rows');
   const otherBody = document.getElementById('other-rows');
+
+  /* ---- Proof of purchase on other claims ----
+     Finance needs a receipt or invoice behind every rand claimed, so an other-claims line
+     may not be submitted without one. A recalled claim keeps the proof it already had on
+     file: the file itself cannot be put back into the browser, but it still counts. */
+  function rowHasProof(tr) {
+    return !!tr.querySelector('.odo-thumb') || tr.dataset.proofOnFile === '1';
+  }
+  // A line counts as filled in once it carries an amount, a date or a description.
+  function otherRowHasContent(tr) {
+    const date = tr.querySelector('input[type=date]').value;
+    const desc = tr.querySelector('input[type=text]').value.trim();
+    const amt = parseFloat(tr.querySelector('.amt-input').value) || 0;
+    return !!(amt > 0 || date || desc);
+  }
+  function otherRowsMissingProof() {
+    return [...otherBody.querySelectorAll('tr')].filter(tr => otherRowHasContent(tr) && !rowHasProof(tr));
+  }
+  // Clear the warning as soon as the employee starts putting the line right.
+  otherBody.addEventListener('input', e => {
+    const tr = e.target.closest('tr');
+    if (tr) tr.classList.remove('row-error');
+  });
 
   function recalc() {
     // Travelling: amount per row = kilometres × hidden rate
@@ -983,6 +1005,21 @@
       return;
     }
 
+    // Every other-claims line must carry its proof of purchase. The odometer photo on a
+    // travelling line is supplementary and is never required.
+    const unproven = otherRowsMissingProof();
+    otherBody.querySelectorAll('tr.row-error').forEach(tr => tr.classList.remove('row-error'));
+    if (unproven.length) {
+      unproven.forEach(tr => tr.classList.add('row-error'));
+      switchTab('other');
+      unproven[0].scrollIntoView({ block: 'center' });
+      submitMsg.textContent = unproven.length === 1
+        ? 'One of your other claims has no proof attached. Every claim line needs its receipt or invoice before it can be submitted.'
+        : unproven.length + ' of your other claims have no proof attached. Every claim line needs its receipt or invoice before it can be submitted.';
+      submitMsg.className = 'submit-msg err';
+      return;
+    }
+
     const data = collectClaim();
 
     if (editingRef) {
@@ -1216,6 +1253,12 @@
     tr.querySelector('.amt-input').value = (r.amount != null ? r.amount : '');
     if (r.hash) tr.dataset.fileHash = r.hash;
     if (r.sig) tr.dataset.sig = r.sig;
+    // The image itself can't be restored, but the proof is on the claim already.
+    if (r.hasProof) {
+      tr.dataset.proofOnFile = '1';
+      const btn = tr.querySelector('.odo-btn');
+      if (btn) { btn.classList.add('has-file'); btn.innerHTML = receiptProofSvg + 'On file'; }
+    }
   }
 
   function populateForm(c) {
@@ -1329,7 +1372,7 @@
       const desc = tr.querySelector('input[type=text]').value;
       const cur = tr.querySelector('.cur-select').value;
       const amt = parseFloat(tr.querySelector('.amt-input').value) || 0;
-      const hasProof = !!tr.querySelector('.odo-thumb');
+      const hasProof = rowHasProof(tr);
       if (amt > 0 || date || desc) {
         other.push({ date, desc, currency: cur, amount: amt, rate: RATES[cur] || 1, zar: amt * (RATES[cur] || 1), hasProof, hash: tr.dataset.fileHash || '', sig: tr.dataset.sig || '' });
       }

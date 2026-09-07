@@ -227,12 +227,13 @@
                 <th>To</th>
                 <th style="width:120px">Kilometres</th>
                 <th style="width:150px">Amount (R)</th>
-                <th style="width:104px">Odometer</th>
+                <th style="width:104px">Odometer <span class="th-opt">(optional)</span></th>
                 <th style="width:34px"></th>
               </tr>
             </thead>
             <tbody id="km-rows"></tbody>
           </table>
+          <p class="proof-rule">An odometer photo is optional on a travelling claim — attach one if you have it.</p>
           <div class="table-foot">
             <button class="btn-add" data-add="km">+ Add row</button>
             <div class="subtotal">Travelling total <b id="km-total">R 0,00</b></div>
@@ -251,12 +252,13 @@
                 <th style="width:140px">Date</th>
                 <th>Description of claim</th>
                 <th style="width:214px">Amount</th>
-                <th style="width:104px">Proof</th>
+                <th style="width:104px">Proof <span class="req">*</span></th>
                 <th style="width:34px"></th>
               </tr>
             </thead>
             <tbody id="other-rows"></tbody>
           </table>
+          <p class="proof-rule required"><span class="req">*</span> A receipt or invoice must be attached to every claim line. A claim cannot be submitted without it.</p>
           <div class="table-foot">
             <button class="btn-add" data-add="other">+ Add row</button>
             <div class="subtotal">Other claims total (ZAR) <b id="other-total">R 0,00</b></div>
