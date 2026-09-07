@@ -346,6 +346,7 @@
         upBtn.innerHTML =
           '<img class="odo-thumb" src="' + url + '" alt="Attached proof">' +
           '<span class="odo-ok" title="Proof attached">&#10003;</span>';
+        keepFile(f).then(id => { if (id) tr.dataset.fileId = id; });
         if (which === 'other') readReceipt(f, tr, upBtn);
       });
     }
@@ -463,6 +464,86 @@
 
   if (policyAskBtn) policyAskBtn.addEventListener('click', askPolicy);
   if (policyQ) policyQ.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); askPolicy(); } });
+
+  /* ===== Uploaded files =====
+     The claim record keeps only the file's name; the file itself lives in IndexedDB on this
+     device, so a claim can be opened later and its bank letter, receipts and odometer photos
+     looked at again. Local storage is far too small for photographs, which is why this is not
+     kept alongside the claims themselves. The backend will take this over. */
+  const FILE_DB = 'mdg-files';
+  const FILE_STORE = 'files';
+  const MAX_IMAGE_EDGE = 1600; // photographs are shrunk before keeping — a phone camera shot
+  const IMAGE_QUALITY = 0.82;  // is many times larger than anything needed to read a slip
+
+  let fileDbPromise = null;
+  function openFileDb() {
+    if (fileDbPromise) return fileDbPromise;
+    fileDbPromise = new Promise((resolve, reject) => {
+      let req;
+      try { req = indexedDB.open(FILE_DB, 1); } catch (e) { reject(e); return; }
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(FILE_STORE)) db.createObjectStore(FILE_STORE, { keyPath: 'id' });
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    return fileDbPromise;
+  }
+
+  function newFileId() {
+    return 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  }
+
+  // Shrink a photograph so a claim's attachments do not run to tens of megabytes.
+  function shrinkImage(file) {
+    return new Promise(resolve => {
+      if (!/^image\//.test(file.type) || /svg/.test(file.type)) { resolve(file); return; }
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(img.width, img.height));
+        if (scale === 1) { URL.revokeObjectURL(url); resolve(file); return; }
+        const cv = document.createElement('canvas');
+        cv.width = Math.round(img.width * scale);
+        cv.height = Math.round(img.height * scale);
+        cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+        cv.toBlob(blob => { URL.revokeObjectURL(url); resolve(blob || file); }, 'image/jpeg', IMAGE_QUALITY);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+      img.src = url;
+    });
+  }
+
+  async function keepFile(file) {
+    if (!file) return '';
+    try {
+      const blob = await shrinkImage(file);
+      const rec = { id: newFileId(), name: file.name, type: file.type || blob.type || '', size: blob.size, blob: blob };
+      const db = await openFileDb();
+      await new Promise((res, rej) => {
+        const tx = db.transaction(FILE_STORE, 'readwrite');
+        tx.objectStore(FILE_STORE).put(rec);
+        tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+      });
+      return rec.id;
+    } catch (e) {
+      return ''; // the claim still goes through; only the copy of the file is lost
+    }
+  }
+
+  async function readKeptFile(id) {
+    if (!id) return null;
+    try {
+      const db = await openFileDb();
+      return await new Promise((res, rej) => {
+        const tx = db.transaction(FILE_STORE, 'readonly');
+        const req = tx.objectStore(FILE_STORE).get(id);
+        req.onsuccess = () => res(req.result || null);
+        req.onerror = () => rej(req.error);
+      });
+    } catch (e) { return null; }
+  }
 
   /* ---- Duplicate detection helpers ---- */
   // Fast, dependency-free hash of the file's base64 (identifies the exact same image).
@@ -603,7 +684,7 @@
     return { days: days, date: oldestDate, late: days > LATE_DAYS };
   }
   function ageTipText(age) {
-    return 'Disbursement claim is older than 90 calendar days of the expense being incurred. '
+    return 'Disbursements claimed is older than 90 days of the expense being incurred. '
       + 'The oldest expense is dated ' + fmtDate(parseYmd(age.date))
       + ' — ' + age.days + ' calendar days before this claim was submitted (policy 5.4).';
   }
@@ -737,6 +818,7 @@
     });
   })();
   const uploadSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 9 12 4 17 9"/><line x1="12" y1="4" x2="12" y2="16"/></svg>';
+  let bankProofFileId = '';   // the kept copy of the letter attached in this session
   const bankProofInput = document.getElementById('bankProofInput');
   const bankProofBtn = document.getElementById('bankProofBtn');
 
@@ -925,6 +1007,7 @@
     bankProofBtn.classList.add('has-file');
     bankProofBtn.classList.remove('field-error');
     bankProofBtn.innerHTML = uploadSvg + '<span class="pf-label">' + f.name + '</span>';
+    keepFile(f).then(id => { bankProofFileId = id; });
     readBankLetter(f);
   });
 
@@ -1270,6 +1353,7 @@
   // ---- Recall: reopen a claim into New Claim for editing (progress is preserved) ----
   let editingRef = null;
   let editingProofName = '';
+  let editingProofFileId = '';   // the letter already on the claim being edited
   const editBanner = document.getElementById('editBanner');
   const submitBtnEl = document.getElementById('submitBtn');
 
@@ -1281,6 +1365,7 @@
     if (texts[0]) texts[0].value = r.from || '';
     if (texts[1]) texts[1].value = r.to || '';
     tr.querySelector('.km-input').value = r.km || '';
+    if (r.fileId) tr.dataset.fileId = r.fileId;
   }
   function fillOtherRow(tr, r) {
     tr.querySelector('input[type=date]').value = r.date || '';
@@ -1330,9 +1415,10 @@
     recalc();
   }
 
-  function startEdit(ref, proofName) {
+  function startEdit(ref, proofName, proofFileId) {
     editingRef = ref;
     editingProofName = proofName || '';
+    editingProofFileId = proofFileId || '';
     document.getElementById('editRef').textContent = ref;
     if (editBanner) editBanner.classList.remove('hidden');
     if (submitBtnEl) submitBtnEl.textContent = 'Update claim';
@@ -1340,6 +1426,7 @@
   function endEdit() {
     editingRef = null;
     editingProofName = '';
+    editingProofFileId = '';
     if (editBanner) editBanner.classList.add('hidden');
     if (submitBtnEl) submitBtnEl.textContent = 'Submit to HOD';
   }
@@ -1379,7 +1466,7 @@
     renderPrev();
 
     populateForm(c);
-    startEdit(ref, c.banking.proofName);
+    startEdit(ref, c.banking.proofName, c.banking.proofFileId);
     if (submitMsg) { submitMsg.textContent = ''; submitMsg.className = 'submit-msg'; }
     showView('new');
     showToast('Disbursement ' + ref + ' has been withdrawn from your HOD while you edit it. Submitting again sends it back to them for approval.', 7000);
@@ -1422,7 +1509,7 @@
       const dist = parseFloat(tr.querySelector('.km-input').value) || 0;
       const hasPhoto = !!tr.querySelector('.odo-thumb');
       if (dist > 0 || date || (texts[0] && texts[0].value)) {
-        km.push({ date, from: texts[0] ? texts[0].value : '', to: texts[1] ? texts[1].value : '', km: dist, amount: dist * KM_RATE, hasPhoto });
+        km.push({ date, from: texts[0] ? texts[0].value : '', to: texts[1] ? texts[1].value : '', km: dist, amount: dist * KM_RATE, hasPhoto, fileId: tr.dataset.fileId || '' });
       }
     });
 
@@ -1434,7 +1521,7 @@
       const amt = parseFloat(tr.querySelector('.amt-input').value) || 0;
       const hasProof = rowHasProof(tr);
       if (amt > 0 || date || desc) {
-        other.push({ date, desc, currency: cur, amount: amt, rate: RATES[cur] || 1, zar: amt * (RATES[cur] || 1), hasProof, hash: tr.dataset.fileHash || '', sig: tr.dataset.sig || '' });
+        other.push({ date, desc, currency: cur, amount: amt, rate: RATES[cur] || 1, zar: amt * (RATES[cur] || 1), hasProof, fileId: tr.dataset.fileId || '', hash: tr.dataset.fileHash || '', sig: tr.dataset.sig || '' });
       }
     });
 
@@ -1455,7 +1542,8 @@
       banking: {
         holder: val('bankHolder'), bank: val('bankName'), acc: val('bankAcc'),
         type: currentBankType,
-        proofName: proofFile ? proofFile.name : (readBankFields().proofName || '')
+        proofName: proofFile ? proofFile.name : (readBankFields().proofName || ''),
+        proofFileId: bankProofFileId || editingProofFileId || ''
       },
       km, other, kmTotal, otherTotal, grandTotal: kmTotal + otherTotal
     };
@@ -1560,6 +1648,7 @@
   });
 
   function resetForm() {
+    bankProofFileId = '';
     kmBody.innerHTML = ''; addRow('km'); addRow('km');
     otherBody.innerHTML = ''; addRow('other'); addRow('other');
     const carReg = document.getElementById('carReg'); if (carReg) carReg.value = '';
@@ -1616,6 +1705,7 @@
       c.other.forEach(r => h += '<tr><td>' + (r.date || '—') + '</td><td>' + (r.desc || '') + '</td><td>' + r.currency + '</td><td style="text-align:right">' + r.amount.toFixed(2) + '</td><td style="text-align:right">' + money.format(r.zar) + '</td></tr>');
       h += '<tr class="tot"><td colspan="4">Total</td><td style="text-align:right">' + money.format(c.otherTotal) + '</td></tr></table>';
     }
+    h += attachmentsHtml(c);
     h += '<h4>Summary</h4><table class="detail-kv">' +
       row2('Travelling', money.format(c.kmTotal)) + row2('Other claims', money.format(c.otherTotal)) +
       '<tr class="tot"><th>Grand total</th><td>' + money.format(c.grandTotal) + '</td></tr></table>';
@@ -1639,6 +1729,68 @@
     return h;
   }
 
+  /* ---- Attachments on the claim detail ----
+     Everything uploaded on the claim, so it can be checked before or after it goes to the
+     HOD. Files kept on this device open in place; older claims kept only the file name. */
+  function attachmentList(c) {
+    const items = [];
+    if (c.banking && (c.banking.proofFileId || c.banking.proofName)) {
+      items.push({ id: c.banking.proofFileId || '', label: 'Proof of account', name: c.banking.proofName || 'Bank confirmation letter' });
+    }
+    (c.other || []).forEach((r, i) => {
+      if (!r.fileId && !r.hasProof) return;
+      items.push({ id: r.fileId || '', label: 'Proof — ' + (r.desc || 'other claim ' + (i + 1)), name: money.format(r.zar || 0) });
+    });
+    (c.km || []).forEach((r, i) => {
+      if (!r.fileId && !r.hasPhoto) return;
+      const trip = [r.from, r.to].filter(Boolean).join(' → ') || 'trip ' + (i + 1);
+      items.push({ id: r.fileId || '', label: 'Odometer — ' + trip, name: (r.km || 0) + ' km' });
+    });
+    return items;
+  }
+
+  function attachmentsHtml(c) {
+    const items = attachmentList(c);
+    if (!items.length) return '';
+    return '<h4>Attachments</h4><div class="attach-grid">' + items.map(it =>
+      '<div class="attach' + (it.id ? '' : ' attach-missing') + '"' + (it.id ? ' data-file="' + it.id + '"' : '') + '>' +
+        '<div class="attach-thumb" data-thumb="' + escapeHtml(it.id) + '">' + (it.id ? '' : '—') + '</div>' +
+        '<div class="attach-meta"><span class="attach-label">' + escapeHtml(it.label) + '</span>' +
+        '<span class="attach-name">' + escapeHtml(it.id ? it.name : 'file not kept on this device') + '</span></div>' +
+      '</div>').join('') + '</div>';
+  }
+
+  // Fill in the thumbnails once the modal is on screen, and open a file when one is clicked.
+  async function wireAttachments(root) {
+    const cells = [...root.querySelectorAll('.attach[data-file]')];
+    for (const cell of cells) {
+      const rec = await readKeptFile(cell.dataset.file);
+      const thumb = cell.querySelector('.attach-thumb');
+      if (!rec) { cell.classList.add('attach-missing'); thumb.textContent = '—';
+        cell.querySelector('.attach-name').textContent = 'file no longer on this device'; continue; }
+      cell._rec = rec;
+      if (/^image\//.test(rec.type)) {
+        const url = URL.createObjectURL(rec.blob);
+        thumb.innerHTML = '<img src="' + url + '" alt="">';
+      } else {
+        thumb.textContent = 'PDF';
+      }
+      cell.addEventListener('click', () => openAttachment(rec));
+    }
+  }
+
+  function openAttachment(rec) {
+    const url = URL.createObjectURL(rec.blob);
+    if (/^image\//.test(rec.type)) {
+      const box = document.getElementById('lightbox');
+      document.getElementById('lightboxImg').src = url;
+      document.getElementById('lightboxName').textContent = rec.name || '';
+      box.classList.remove('hidden');
+    } else {
+      window.open(url, '_blank'); // a PDF opens in its own tab
+    }
+  }
+
   function openClaim(c) {
     if (!c) return;
     modalClaim = c;
@@ -1646,7 +1798,19 @@
     document.getElementById('mSub').textContent = 'Submitted ' + fmtDateTime(c.submitted) + '  ·  ' + c.status;
     document.getElementById('mBody').innerHTML = buildDetail(c);
     modal.classList.remove('hidden');
+    wireAttachments(document.getElementById('mBody'));
   }
+  const lightbox = document.getElementById('lightbox');
+  function closeLightbox() {
+    lightbox.classList.add('hidden');
+    const img = document.getElementById('lightboxImg');
+    if (img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
+    img.removeAttribute('src');
+  }
+  document.getElementById('lightboxClose').addEventListener('click', closeLightbox);
+  lightbox.addEventListener('click', e => { if (e.target === lightbox) closeLightbox(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !lightbox.classList.contains('hidden')) closeLightbox(); });
+
   function closeModal() { modal.classList.add('hidden'); }
   document.getElementById('mClose').addEventListener('click', closeModal);
   document.getElementById('mCloseBtn').addEventListener('click', closeModal);

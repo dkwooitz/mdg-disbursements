@@ -567,6 +567,17 @@
 </div>
 
 <!-- Confirmation dialog -->
+<!-- Full-size view of an attached image -->
+<div class="modal-overlay lightbox hidden" id="lightbox">
+  <div class="lightbox-inner">
+    <div class="lightbox-bar">
+      <span id="lightboxName"></span>
+      <button class="modal-close" id="lightboxClose" aria-label="Close">&times;</button>
+    </div>
+    <img id="lightboxImg" alt="Attached file" />
+  </div>
+</div>
+
 <div class="modal-overlay hidden" id="confirmModal">
   <div class="modal confirm-modal">
     <div class="confirm-body">
