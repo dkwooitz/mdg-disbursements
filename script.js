@@ -1758,9 +1758,9 @@
   }
 
   /* ===== Admin: editable sites, machines and km rate (persisted in this browser) ===== */
-  const DEFAULT_SITES = ['Venetia', 'ARM', 'Styldrift', 'Lonmin', 'Thembelani', 'PMC', 'Ivan Plats', 'Zondereinde', 'Cullinan', 'Finsch', 'South Deep', 'Evander', 'Sasol Kromdraai', 'Sasol Bokamoso', 'Rosh Pina'];
+  const DEFAULT_SITES = ['Venetia', 'ARM', 'Styldrift', 'Lonmin', 'Thembelani', 'PMC', 'Ivan Plats', 'Zondereinde', 'Cullinan', 'Finsch', 'South Deep', 'Evander', 'Sasol Kromdraai', 'Sasol Bokamoso', 'Rosh Pina', 'Fochville Head Office'];
   let SITES = DEFAULT_SITES.slice();
-  const CONFIG_VERSION = 3; // bump when the built-in site or machine list changes so saved copies refresh
+  const CONFIG_VERSION = 4; // bump when the built-in site or machine list changes so saved copies refresh
 
   // HR contacts shown on the Policy page and used by the policy assistant's fallback.
   const DEFAULT_CONTACTS = [
@@ -1777,9 +1777,19 @@
   function loadConfig() {
     let cfg = {};
     try { cfg = JSON.parse(localStorage.getItem('mdg-config') || '{}'); } catch (e) {}
-    // Only trust saved sites from a config built on the current site list; otherwise use the new defaults.
-    if (cfg.version === CONFIG_VERSION && Array.isArray(cfg.sites)) SITES = cfg.sites.slice();
-    else SITES = DEFAULT_SITES.slice();
+    // A browser that has used the app before holds its own copy of the site list, so a new
+    // built-in site would never reach it. On a version bump, fold in the ones it is missing
+    // rather than throwing the list away; the admin's own sites stay put.
+    if (Array.isArray(cfg.sites) && cfg.sites.length) {
+      const saved = cfg.sites.slice();
+      if (cfg.version !== CONFIG_VERSION) {
+        const have = new Set(saved.map(s => String(s).toLowerCase()));
+        DEFAULT_SITES.forEach(s => { if (!have.has(s.toLowerCase())) saved.push(s); });
+      }
+      SITES = saved;
+    } else {
+      SITES = DEFAULT_SITES.slice();
+    }
     if (Array.isArray(cfg.machines) && cfg.machines.length) {
       const saved = cfg.machines.slice();
       // A browser that has used the app before holds its own copy of the machine list, so new
