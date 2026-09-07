@@ -970,7 +970,9 @@
       [holder, bank, acc].forEach(el => { if (el.value) el.classList.remove('field-error'); });
       bankProfiles[currentBankType] = readBankFields(); // keep the session copy in step
     } catch (e) {
-      /* leave fields for manual entry */
+      // Say so rather than leaving three blank boxes and no explanation. The letter is
+      // still attached and still counts as proof — only the reading of it failed.
+      showToast('Could not read the letter automatically. Your letter is attached — please type the account holder, bank and account number in yourself.', 8000);
     } finally {
       bankProofBtn.classList.remove('busy');
       if (label) label.textContent = file.name;
