@@ -825,7 +825,11 @@
     padding: 28px 24px 22px; text-align: center;
   }
   .confirm-icon { flex: none; width: 48px; height: 44px; color: var(--danger); }
-  .confirm-body p { margin: 0; font-size: var(--fs-body); line-height: 1.5; color: var(--text); }
+  /* Justified, so both edges of the message line up under the triangle */
+  .confirm-body p {
+    margin: 0; font-size: var(--fs-body); line-height: 1.5; color: var(--text);
+    text-align: justify; hyphens: auto; width: 100%;
+  }
   /* Two classes, so this beats the .modal-foot flex-end defined further down */
   .modal-foot.confirm-foot { justify-content: space-between; }
   .btn-delete { background: var(--danger); color: var(--mdg-white); border: 0; }
@@ -1101,6 +1105,9 @@
     .modal-head, .modal-body, .modal-foot { padding-left: 16px; padding-right: 16px; }
     .modal-body { overflow-x: auto; } /* a long line scrolls in the table, not the page */
     .modal-foot { flex-wrap: wrap; }
+    /* A column this narrow cannot justify a long reference without leaving rivers of
+       white space between the words, so the message reads left-aligned on a phone. */
+    .confirm-body p { text-align: left; }
     .actions { flex-direction: column; align-items: stretch; }
     .actions .btn, .modal-foot .btn { width: 100%; min-height: 46px; }
     .detail-tbl, .detail-kv { font-size: var(--fs-sm); }
