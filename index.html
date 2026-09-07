@@ -1,15 +1,17 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>MDG Disbursements</title>
 <script>
   // Apply the saved colour scheme as early as possible so it survives reloads with no flash.
+  // Corporate CI allows two themes only; anything else saved earlier falls back to light.
   (function () {
     try {
       var t = localStorage.getItem('mdg-theme');
-      if (t) document.documentElement.setAttribute('data-theme', t);
+      if (t !== 'light' && t !== 'dark') { t = 'light'; localStorage.setItem('mdg-theme', t); }
+      document.documentElement.setAttribute('data-theme', t);
     } catch (e) { /* storage unavailable — fall back to default */ }
   })();
 </script>
@@ -91,10 +93,8 @@
 
             <div class="theme-label">Theme</div>
             <select id="themeSelect">
-              <option value="light">MDG Light</option>
-              <option value="dark" selected>MDG Dark</option>
-              <option value="shane">Rose</option>
-              <option value="jade">Jade</option>
+              <option value="light" selected>MDG Light</option>
+              <option value="dark">MDG Dark</option>
             </select>
 
             <button class="btn-hub">Back to Hub</button>
@@ -489,23 +489,13 @@
           <p class="admin-note">Choose a colour scheme. Your choice is remembered on this device.</p>
           <div class="theme-grid" id="themeGrid">
             <button class="theme-card" data-theme-val="light" type="button">
-              <span class="theme-swatch" style="background:#f4f5f7;"><i style="background:#ffffff;"></i><em style="background:#2f6fe0;"></em></span>
-              <span class="theme-name">MDG Light</span>
+              <span class="theme-swatch" style="background:#f5f3f0;"><i style="background:#ffffff;"></i><em style="background:#1c4584;"></em></span>
+              <span class="theme-name">Corporate light</span>
               <span class="theme-tick">&#10003;</span>
             </button>
             <button class="theme-card" data-theme-val="dark" type="button">
-              <span class="theme-swatch" style="background:#0d0d0f;"><i style="background:#1b1b1f;"></i><em style="background:#2f80ff;"></em></span>
-              <span class="theme-name">MDG Dark</span>
-              <span class="theme-tick">&#10003;</span>
-            </button>
-            <button class="theme-card" data-theme-val="shane" type="button">
-              <span class="theme-swatch" style="background:#fff5f8;"><i style="background:#ffe3ec;"></i><em style="background:#e85d9a;"></em></span>
-              <span class="theme-name">Rose</span>
-              <span class="theme-tick">&#10003;</span>
-            </button>
-            <button class="theme-card" data-theme-val="jade" type="button">
-              <span class="theme-swatch" style="background:#f2faf6;"><i style="background:#dcf0e5;"></i><em style="background:#1f9d63;"></em></span>
-              <span class="theme-name">Jade</span>
+              <span class="theme-swatch" style="background:#1a1c20;"><i style="background:#3c4648;"></i><em style="background:#7ba4e3;"></em></span>
+              <span class="theme-name">Corporate dark</span>
               <span class="theme-tick">&#10003;</span>
             </button>
           </div>

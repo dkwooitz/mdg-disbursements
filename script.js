@@ -132,7 +132,10 @@
     }
   });
   // One place that applies a theme everywhere and keeps all controls in sync.
+  // Corporate CI permits two themes only (MDG-COE-POL-DIG-01 §5.4).
+  const THEMES = ['light', 'dark'];
   function applyTheme(t) {
+    if (THEMES.indexOf(t) === -1) t = 'light';
     document.documentElement.setAttribute('data-theme', t);
     try { localStorage.setItem('mdg-theme', t); } catch (e) { /* storage unavailable */ }
     if (themeSelect) themeSelect.value = t;
@@ -140,7 +143,7 @@
   }
 
   // Initialise controls to the current theme (from storage or default).
-  const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+  const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
   applyTheme(currentTheme);
 
   themeSelect.addEventListener('change', () => applyTheme(themeSelect.value));
