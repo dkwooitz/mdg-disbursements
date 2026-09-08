@@ -308,11 +308,8 @@
     document.getElementById('sum-other').textContent = money.format(other);
     document.getElementById('sum-grand').textContent = money.format(km + other);
 
-    // Tell the employee the moment the claim crosses the materiality limit, while they can
-    // still see what pushed it over, rather than only once it has been submitted.
-    const matFlag = document.getElementById('materialFlag');
-    if (matFlag) matFlag.classList.toggle('hidden', !((km + other) > MATERIAL_LIMIT));
-
+    // Nothing here tells the employee they have crossed the materiality limit — see
+    // isMaterial for why.
     updateKmFlag();
   }
 
@@ -1184,10 +1181,8 @@
       claims.unshift(data);
       renderPrev(data.ref);
       saveClaims();
-      submitMsg.textContent = 'Claim ' + data.ref + ' submitted — it now appears under Previous Claims.'
-        + (isMaterial(data) ? ' It is a material disbursement, so it goes to your HOD and then to the CFO for approval.' : '');
+      submitMsg.textContent = 'Claim ' + data.ref + ' submitted — it now appears under Previous Claims.';
       submitMsg.className = 'submit-msg ok';
-      if (isMaterial(data)) showToast(materialTipText(), 8000);
       clearDraft(); // the claim is in — the draft has served its purpose
       resetForm();
       showView('previous');
@@ -1301,6 +1296,11 @@
      HOD. The routing itself is not built yet — no approval flow exists — so for now the
      app detects it, says so, and shows the longer route on the claim's progress. */
   const MATERIAL_LIMIT = 10000; // rand, excluding
+  /* Materiality is deliberately silent to the person claiming. Told that R10 000 is the
+     line, someone can trim a claim to R9 999 to keep it away from the CFO — so the app
+     never shows it on the form, in Previous Claims, on the claim, or on the PDF. It is
+     worked out from the claim's own total whenever an approver needs it, and belongs on
+     the HOD's and the CFO's queues once approver sign-in exists. */
   function isMaterial(c) { return !!c && +c.grandTotal > MATERIAL_LIMIT; }
   // Says a claim was pulled back, changed and sent to the HOD again — so an approver can
   // see they are looking at something different from what they may have seen before.
@@ -1320,7 +1320,9 @@
 
   const STEPS = ['Filled in disbursement', 'Submitted to HOD', 'Submitted for payment', 'Disbursement paid'];
   const STEPS_MATERIAL = ['Filled in disbursement', 'Submitted to HOD', 'Approved by CFO', 'Submitted for payment', 'Disbursement paid'];
-  function stepsFor(c) { return isMaterial(c) ? STEPS_MATERIAL : STEPS; }
+  // Always the plain route here: an extra CFO step would itself reveal the threshold.
+  // STEPS_MATERIAL is what an approver view should use once one exists.
+  function stepsFor(c) { return STEPS; }
 
   // Once the HOD has approved it, a disbursement is out of the employee's hands: it can no
   // longer be recalled for editing or deleted, so what Finance pays out is what was approved.
@@ -1387,9 +1389,6 @@
       const age = claimAge(c);
       if (age && age.late) {
         badges.push('<span class="age-flag-badge" data-tip="' + escapeHtml(ageTipText(age)) + '">!</span>');
-      }
-      if (isMaterial(c)) {
-        badges.push('<span class="material-badge" data-tip="' + escapeHtml(materialTipText()) + '">CFO</span>');
       }
       if (c.revision) {
         badges.push('<span class="revision-badge" data-tip="' + escapeHtml(revisionTipText(c)) + '">REV ' + c.revision + '</span>');
@@ -1875,11 +1874,7 @@
       h += '<div class="km-flag" style="margin-top:18px;">' + escapeHtml(revisionTipText(c)) +
         ' Any approval it had before that falls away — it must be approved as it now stands.</div>';
     }
-    if (isMaterial(c)) {
-      h += '<div class="material-flag" style="margin-top:18px;"><strong>Material disbursement.</strong> ' +
-        'At ' + money.format(c.grandTotal) + ' this claim is above ' + money.format(MATERIAL_LIMIT) +
-        ', so it must be approved by the requestor’s HOD and by the CFO before it can be paid.</div>';
-    }
+    // No materiality notice on the claim either — the claimant opens this.
     return h;
   }
 
@@ -2138,7 +2133,7 @@
       // A material disbursement needs the CFO's signature as well as the H.O.D's.
       body: [
         ['H.O.D / Site Manager', '', '', '']
-      ].concat(isMaterial(c) ? [['CFO (material disbursement)', '', '', '']] : []).concat([
+      ].concat([
         ['Employee', fullName(c.employee) || '', '', fmtDate(c.submitted)]
       ]),
       headStyles: { fillColor: NAVY, textColor: 255 },
@@ -2150,10 +2145,7 @@
     if (c.revision) {
       notes.push('Note: ' + revisionTipText(c) + ' Any approval given before that falls away.');
     }
-    if (isMaterial(c)) {
-      notes.push('Note: Material disbursement — at ' + money.format(c.grandTotal) + ' this claim is above '
-        + money.format(MATERIAL_LIMIT) + ' and must be approved by the requestor’s H.O.D and by the CFO before payment.');
-    }
+    // No materiality note on the PDF — the claimant prints this.
     const pdfAge = claimAge(c);
     if (pdfAge && pdfAge.late) {
       notes.push('Note: ' + ageTipText(pdfAge) + ' Late submissions may be declined unless exceptional circumstances are justified and approved by a senior manager.');
