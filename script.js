@@ -294,6 +294,23 @@
 
   function setDumpStatus(text) { if (dumpStatus) dumpStatus.textContent = text || ''; }
 
+  // A line only stays marked while another line still shares its slip or its details.
+  function clearLoneDuplicates() {
+    const marked = [...otherBody.querySelectorAll('tr.dup-row')];
+    if (!marked.length) return;
+    const rows = [...otherBody.querySelectorAll('tr')];
+    marked.forEach(tr => {
+      const twin = rows.some(other => other !== tr &&
+        ((tr.dataset.fileHash && other.dataset.fileHash === tr.dataset.fileHash) ||
+         (tr.dataset.sig && other.dataset.sig === tr.dataset.sig)));
+      if (!twin) tr.classList.remove('dup-row');
+    });
+    if (!otherBody.querySelector('tr.dup-row') && dumpWarning &&
+        /possible duplicate/.test(dumpWarning.textContent) && !/not added/.test(dumpWarning.textContent)) {
+      dumpWarning.classList.add('hidden');
+    }
+  }
+
   async function processSlipDump(files) {
     if (dumpBtn) dumpBtn.disabled = true;
     if (dumpWarning) { dumpWarning.classList.add('hidden'); dumpWarning.textContent = ''; }
@@ -451,6 +468,9 @@
     document.getElementById('sum-km').textContent = money.format(km);
     document.getElementById('sum-other').textContent = money.format(other);
     document.getElementById('sum-grand').textContent = money.format(km + other);
+
+    // Once one of a marked pair is removed, the one left is no longer a duplicate.
+    clearLoneDuplicates();
 
     // Nothing here tells the employee they have crossed the materiality limit — see
     // isMaterial for why.
