@@ -317,16 +317,13 @@
   }
 
   // Show the soft disclaimer if any travelling line repeats a previous disbursement's route + distance.
-  function updateKmFlag() {
-    const rows = [];
-    kmBody.querySelectorAll('tr').forEach(tr => {
-      const texts = tr.querySelectorAll('input[type=text]');
-      rows.push({ from: texts[0] ? texts[0].value : '', to: texts[1] ? texts[1].value : '', km: tr.querySelector('.km-input').value });
-    });
-    const flagged = kmMatchesPrevious(rows, typeof editingRef !== 'undefined' ? editingRef : null);
-    const el = document.getElementById('kmFlag');
-    if (el) el.classList.toggle('hidden', !flagged);
-  }
+  /* The repeated-kilometres check is deliberately silent to the person claiming.
+     Telling them their route matches an earlier claim would only teach them to vary it
+     until the check stops firing. The flag is still worked out and stored on the claim
+     (see recomputeKmFlags), for the HOD — and the CFO on a material claim — to act on
+     once approver sign-in exists. It must not be surfaced anywhere the requestor looks:
+     not on the form, not in Previous Claims, not on the claim, not on the PDF. */
+  function updateKmFlag() { /* nothing is shown to the requestor */ }
 
   function wireRow(tr, which) {
     tr.querySelectorAll('input:not([type=file])').forEach(i => i.addEventListener('input', recalc));
@@ -1360,9 +1357,7 @@
       tr.className = 'claim-row' + (c.ref === highlightRef ? ' row-new' : '') + (c.deleted ? ' deleted-row' : '');
 
       const badges = [];
-      if (c.kmFlagged) {
-        badges.push('<span class="km-flag-badge" data-tip="The kilometers submitted are duplicate of a previous submission. Please ensure correctness of submission.">!</span>');
-      }
+      // No duplicate-kilometres badge here — that flag is for approvers, not the claimant.
       const age = claimAge(c);
       if (age && age.late) {
         badges.push('<span class="age-flag-badge" data-tip="' + escapeHtml(ageTipText(age)) + '">!</span>');
@@ -1791,9 +1786,7 @@
     h += '<h4>Summary</h4><table class="detail-kv">' +
       row2('Travelling', money.format(c.kmTotal)) + row2('Other claims', money.format(c.otherTotal)) +
       '<tr class="tot"><th>Grand total</th><td>' + money.format(c.grandTotal) + '</td></tr></table>';
-    if (c.kmFlagged) {
-      h += '<div class="km-flag" style="margin-top:18px;">The kilometres and/or route on this claim reflect a previous disbursement. Please ensure the accuracy and integrity of this disbursement.</div>';
-    }
+    // The duplicate-kilometres flag is not shown on the claim: the claimant opens this too.
     const age = claimAge(c);
     if (age && age.late) {
       h += '<div class="km-flag" style="margin-top:18px;">' + escapeHtml(ageTipText(age)) +
@@ -2073,10 +2066,8 @@
       margin: { left: M, right: M }
     });
 
+    // The duplicate-kilometres flag stays off the PDF as well — the claimant prints this.
     const notes = [];
-    if (c.kmFlagged) {
-      notes.push('Note: The kilometres and/or route on this claim reflect a previous disbursement. Please ensure the accuracy and integrity of this disbursement.');
-    }
     if (c.revision) {
       notes.push('Note: ' + revisionTipText(c) + ' Any approval given before that falls away.');
     }
