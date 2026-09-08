@@ -1672,6 +1672,15 @@
   // Recalled means the employee pulled it back and is working on it again, so to them it is
   // a draft. The stored status stays "Recalled" for the record; only the wording changes.
   function isRecalled(c) { return !!c && !c.deleted && c.status === 'Recalled'; }
+
+  // A draft belongs to a claim when it was saved while that claim was being edited and the
+  // claim can still be edited. If the claim has since been deleted or approved, the draft is
+  // on its own again and stands as an unsubmitted claim of its own.
+  function draftBelongsToClaim(d) {
+    if (!d || !d.forRef) return false;
+    const c = claims.find(x => x.ref === d.forRef);
+    return !!c && !c.deleted && !isHodApproved(c);
+  }
   function statusLabel(c) { return isRecalled(c) ? 'Draft' : c.status; }
 
   // What a saved draft adds up to, for the row that shows it before it is submitted.
@@ -1753,14 +1762,17 @@
 
     // A saved draft has never been near the HOD, so it sits at the top with nothing to view
     // or print yet — only the work in progress and the chance to carry on with it.
+    //
+    // Unless it is a draft of changes to a claim that already exists. That claim has its own
+    // line, which already reads Draft and already offers to carry on, so a second line for
+    // the same disbursement says nothing new and reads as though there were two of them.
     const draft = readDraft();
-    if (draft && draftHasContent(draft)) {
+    if (draft && draftHasContent(draft) && !draftBelongsToClaim(draft)) {
       const totals = draftTotals(draft);
       const dr = document.createElement('tr');
       dr.className = 'claim-row draft-row';
       dr.innerHTML =
-        '<td class="ref"><div class="ref-wrap"><span class="ref-no">' +
-          (draft.forRef ? 'Changes to ' + escapeHtml(draft.forRef) : 'Not submitted') + '</span></div></td>' +
+        '<td class="ref"><div class="ref-wrap"><span class="ref-no">Not submitted</span></div></td>' +
         '<td data-label="Saved">' + fmtDate(draft.savedAt) + '</td>' +
         '<td data-label="Type">' + totals.type + '</td>' +
         '<td class="col-amount" data-label="Amount (ZAR)">' + money.format(totals.grand) + '</td>' +
@@ -1983,19 +1995,36 @@
     // Recalling withdraws the claim from the HOD there and then. What the HOD was asked to
     // approve is no longer what the employee is holding, so it may not sit in their queue
     // while it is being changed. Submitting again sends it back as a fresh request.
-    c.statusBeforeRecall = c.status;
-    c.stageBeforeRecall = typeof c.stage === 'number' ? c.stage : 1;
-    c.status = 'Recalled';
-    c.stage = 0; // back to "filled in" — no longer with the HOD
-    c.recalledAt = new Date();
-    saveClaims();
+    //
+    // The button reads Draft once that has happened, and pressing it again is not a second
+    // recall — it is carrying on with an unfinished edit. Recording the status again would
+    // write "Recalled" over the status the claim must go back to.
+    const resuming = isRecalled(c);
+    if (!resuming) {
+      c.statusBeforeRecall = c.status;
+      c.stageBeforeRecall = typeof c.stage === 'number' ? c.stage : 1;
+      c.status = 'Recalled';
+      c.stage = 0; // back to "filled in" — no longer with the HOD
+      c.recalledAt = new Date();
+      saveClaims();
+    }
     renderPrev();
 
-    populateForm(c);
+    // Changes saved as a draft along the way are the newest version of this claim, so
+    // carrying on means carrying on with those and not with what the HOD last saw.
+    const d = readDraft();
+    const fromDraft = resuming && d && d.forRef === ref && draftHasContent(d);
+    if (fromDraft) applyDraft(d); else populateForm(c);
     startEdit(ref, c.banking.proofName, c.banking.proofFileId);
     if (submitMsg) { submitMsg.textContent = ''; submitMsg.className = 'submit-msg'; }
+    if (draftBanner) draftBanner.classList.add('hidden');
     showView('new');
-    showToast('Disbursement ' + ref + ' has been withdrawn from your HOD while you edit it. Submitting again sends it back to them for approval.', 7000);
+    showToast(fromDraft
+      ? 'Carrying on with your saved changes to ' + ref + '. Submitting sends it back to your HOD for approval.'
+      : resuming
+        ? 'Carrying on with ' + ref + '. It is not with your HOD until you submit it again.'
+        : 'Disbursement ' + ref + ' has been withdrawn from your HOD while you edit it. Submitting again sends it back to them for approval.',
+      7000);
   }
 
   // ---- Delete: retract the disbursement, never remove it ----
@@ -2201,7 +2230,9 @@
   function showDraftBanner(d) {
     if (!draftBanner) return;
     document.getElementById('draftBannerText').textContent =
-      'You saved a draft on ' + fmtDateTime(d.savedAt) + '.'
+      (draftBelongsToClaim(d)
+        ? 'You saved changes to ' + d.forRef + ' on ' + fmtDateTime(d.savedAt) + '.'
+        : 'You saved a draft on ' + fmtDateTime(d.savedAt) + '.')
       + (d.proofCount ? ' The ' + d.proofCount + ' file' + (d.proofCount > 1 ? 's' : '') + ' you attached ' + (d.proofCount > 1 ? 'are' : 'is') + ' still on it.' : '');
     draftBanner.classList.remove('hidden');
   }
