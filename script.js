@@ -1174,6 +1174,7 @@
         submitMsg.className = 'submit-msg err';
         return;
       }
+      data.ref = newRef();   // every check has passed, so this claim earns the next number
       data.kmFlagged = kmMatchesPrevious(data.km, null);
       claims.unshift(data);
       renderPrev(data.ref);
@@ -1626,7 +1627,10 @@
     const proofFile = bankProofInput.files[0];
 
     return {
-      ref: newRef(),
+      // No reference yet. One is minted only when a new claim is actually created, so a
+      // blocked submit or an update to an existing claim cannot burn a number and leave a
+      // gap in the sequence.
+      ref: '',
       submitted: new Date(),
       status: 'Pending HOD',
       stage: 1, // 0 filled in · 1 submitted to HOD · 2 submitted for payment · 3 paid
@@ -1675,8 +1679,11 @@
       savedAt: new Date().toISOString(),
       site: val('empSite'), machine: val('empMachine'), project: val('empProject'),
       costCentre: val('empCostCentre'), carReg: val('carReg'),
+      // proofName matters as much as the id: it is what tells the restored form that a bank
+      // letter is attached. Without it the claim cannot be submitted after being reopened.
       bank: { holder: val('bankHolder'), bank: val('bankName'), acc: val('bankAcc'),
-              type: currentBankType, proofFileId: bankProofFileId || '' },
+              type: currentBankType, proofName: readBankFields().proofName || '',
+              proofFileId: bankProofFileId || '' },
       km, other,
       proofCount: km.concat(other).filter(r => r.fileId).length
     };
@@ -1713,10 +1720,14 @@
   function applyDraft(d) {
     setVal('empSite', d.site); setVal('empMachine', d.machine); setVal('empProject', d.project); setVal('empCostCentre', d.costCentre); setVal('carReg', d.carReg);
     if (d.bank) {
-      setVal('bankHolder', d.bank.holder); setVal('bankName', d.bank.bank); setVal('bankAcc', d.bank.acc);
       currentBankType = d.bank.type === 'other' ? 'other' : 'main';
       if (bankTypeSel) bankTypeSel.value = currentBankType;
-      if (d.bank.proofFileId) bankProofFileId = d.bank.proofFileId;
+      // writeBankFields, not setVal: it also puts the bank letter back on the button, which
+      // is what the submit check looks at. Setting the text boxes alone left a restored
+      // draft unsubmittable, asking for a proof of account that was already there.
+      writeBankFields({ holder: d.bank.holder, bank: d.bank.bank, acc: d.bank.acc,
+                        proofName: d.bank.proofName || '', proofFileId: d.bank.proofFileId || '' });
+      bankProfiles[currentBankType] = readBankFields();
       updateBankHint();
     }
     kmBody.innerHTML = '';
