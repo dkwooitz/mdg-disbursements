@@ -1322,9 +1322,9 @@
     function render(showAll) {
       shown = filter(showAll ? '' : input.value);
       activeIdx = -1;
-      if (!shown.length) { list.innerHTML = '<div class="combo-empty">No matching machine</div>'; list.classList.remove('hidden'); return; }
+      if (!shown.length) { list.innerHTML = '<div class="combo-empty">No matching machine</div>'; list.classList.remove('hidden'); placeComboList(input, list); return; }
       list.innerHTML = shown.map((m, i) => '<div class="combo-opt" data-i="' + i + '">' + m + '</div>').join('');
-      list.classList.remove('hidden');
+      list.classList.remove('hidden'); placeComboList(input, list);
       if (showAll) showCurrentOption(list, shown, input.value);
     }
     function choose(m) { input.value = m; input.classList.remove('field-error'); list.classList.add('hidden'); }
@@ -3181,6 +3181,17 @@
   // Type-ahead combobox for Site, constrained to the SITES list (admin-editable).
   // Project and cost centre behave like the site and machine boxes, except that leaving
   // them blank is allowed — not every disbursement belongs to a project or a cost centre.
+  /* A dropdown opening downwards can run off the bottom of a phone, under the navigation
+     bar, leaving the options that are actually wanted out of sight. When there is more
+     room above the field than below it, the list opens upwards instead. */
+  function placeComboList(input, list) {
+    const box = input.getBoundingClientRect();
+    const below = window.innerHeight - box.bottom;
+    const above = box.top;
+    const needs = Math.min(list.scrollHeight + 8, window.innerHeight * 0.42);
+    list.classList.toggle('above', below < needs && above > below);
+  }
+
   function initListCombo(inputId, listId, getItems, emptyText) {
     const input = document.getElementById(inputId);
     const list = document.getElementById(listId);
@@ -3196,7 +3207,7 @@
       list.innerHTML = shown.length
         ? shown.map((p, i) => '<div class="combo-opt" data-i="' + i + '">' + escapeHtml(p) + '</div>').join('')
         : '<div class="combo-empty">' + emptyText + '</div>';
-      list.classList.remove('hidden');
+      list.classList.remove('hidden'); placeComboList(input, list);
       if (showAll) showCurrentOption(list, shown, input.value);
     }
     function choose(p) { input.value = p; input.classList.remove('field-error'); list.classList.add('hidden'); }
@@ -3245,9 +3256,9 @@
     function render(showAll) {
       shown = filter(showAll ? '' : input.value);
       activeIdx = -1;
-      if (!shown.length) { list.innerHTML = '<div class="combo-empty">No matching site</div>'; list.classList.remove('hidden'); return; }
+      if (!shown.length) { list.innerHTML = '<div class="combo-empty">No matching site</div>'; list.classList.remove('hidden'); placeComboList(input, list); return; }
       list.innerHTML = shown.map((s, i) => '<div class="combo-opt" data-i="' + i + '">' + escapeHtml(s) + '</div>').join('');
-      list.classList.remove('hidden');
+      list.classList.remove('hidden'); placeComboList(input, list);
       if (showAll) showCurrentOption(list, shown, input.value);
     }
     function choose(s) { input.value = s; input.classList.remove('field-error'); list.classList.add('hidden'); }

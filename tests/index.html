@@ -26,6 +26,8 @@
   .case.bad { border-left-color: #c60c30; }
   iframe { width: 460px; height: 360px; border: 1px solid #ccc; border-radius: 8px; opacity: .5; }
   .stage { margin-top: 24px; }
+  .width { margin-left: 12px; font-weight: 600; }
+  .width select { font: inherit; padding: 6px 8px; border-radius: 6px; }
 </style>
 </head>
 <body>
@@ -39,6 +41,14 @@
 
 <div id="bar">
   <button class="btn" id="run">Run the checks</button>
+  <label class="width">
+    on a
+    <select id="width">
+      <option value="380">phone (380px)</option>
+      <option value="760">tablet (760px)</option>
+      <option value="1200" selected>computer (1200px)</option>
+    </select>
+  </label>
   <span id="summary"></span>
 </div>
 
@@ -104,6 +114,10 @@ async function until(fn, why, ms) {
 async function freshApp() {
   localStorage.removeItem('mdg-claims');
   localStorage.removeItem('mdg-draft');
+  // The app decides its layout from the width it is given, so the frame is set to the
+  // width being checked: the phone layout and the computer layout are the same app, and
+  // both have to work.
+  frame.style.width = document.getElementById('width').value + 'px';
   await new Promise(res => {
     frame.onload = res;
     frame.src = '../index.html?test=' + Date.now();
@@ -502,6 +516,7 @@ check('Every reference number is different', async () => {
 
 // Reloads the app without clearing anything, for checks that set up a state first.
 freshApp.reload = async function () {
+  frame.style.width = document.getElementById('width').value + 'px';
   await new Promise(res => { frame.onload = res; frame.src = '../index.html?test=' + Date.now(); });
   win = frame.contentWindow;
   doc = frame.contentDocument;
@@ -527,9 +542,11 @@ document.getElementById('run').addEventListener('click', async () => {
     }
   }
 
-  summary.textContent = failed === 0
+  const where = document.getElementById('width');
+  const layout = where.options[where.selectedIndex].textContent;
+  summary.textContent = (failed === 0
     ? 'all ' + passed + ' checks passed'
-    : failed + ' of ' + (passed + failed) + ' failed';
+    : failed + ' of ' + (passed + failed) + ' failed') + ' on a ' + layout.replace(/ \(.*/, '');
   summary.style.color = failed === 0 ? '#2e7d46' : '#c60c30';
   window.__results = { passed, failed };
   btn.disabled = false;

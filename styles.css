@@ -331,6 +331,8 @@
     background: var(--card); border: 1px solid var(--border); border-radius: 8px;
     box-shadow: 0 12px 28px rgba(0,0,0,.28);
   }
+  /* Opened upwards when the field sits too low for the list to fit below it */
+  .combo-list.above { top: auto; bottom: calc(100% + 4px); }
   .combo-opt { padding: 9px 12px; font-size: var(--fs-sm); cursor: pointer; }
   .combo-opt:hover, .combo-opt.active { background: var(--accent-soft); color: var(--accent); }
   .combo-empty { padding: 10px 12px; font-size: 12.5px; color: var(--text-dim); }
@@ -912,11 +914,19 @@
     padding: 40px 16px; z-index: 100; overflow-y: auto;
   }
   .modal-overlay.hidden { display: none; }
+  /* A column, so a long claim scrolls inside the box while the reference at the top and
+     the buttons at the bottom stay where they are. Without this the buttons were laid out
+     below the box and, on a phone, off the bottom of the screen: a claim with a few lines
+     on it could be opened but not closed. */
   .modal {
     background: var(--card); border: 1px solid var(--border);
     border-radius: 14px; width: 100%; max-width: 640px;
     box-shadow: 0 20px 60px rgba(0,0,0,.4);
+    display: flex; flex-direction: column;
+    max-height: calc(100vh - 80px);   /* the overlay's 40px of padding, top and bottom */
   }
+  .modal-head, .modal-foot { flex: 0 0 auto; }
+  .modal-body { flex: 1 1 auto; overflow-y: auto; }
   .modal-head {
     display: flex; align-items: flex-start; justify-content: space-between;
     padding: 20px 24px; border-bottom: 1px solid var(--border);
@@ -1135,8 +1145,21 @@
     .claim-table td > select,
     .claim-table td > .cur-row + .zar-line { width: 100%; }
     .cur-row { gap: 8px; }
-    .cur-row .cur-select { flex: 0 0 auto; width: auto; min-width: 104px; }
-    .cur-row .amt-input { flex: 1 1 auto; min-width: 0; }
+    /* The list holds every currency in the world, so the select's natural width is that of
+       the longest name — and refusing to shrink, it left the amount box 27px wide on a
+       phone: too narrow to type into. Capped here, the code stays readable, which is what
+       identifies the currency, and the amount gets the room it needs. */
+    .cur-row .cur-select { flex: 0 1 auto; width: auto; min-width: 92px; max-width: 132px; }
+    .cur-row .amt-input { flex: 1 1 auto; min-width: 96px; }
+    /* A finger, not a mouse pointer: the option rows and the remove buttons on the Admin
+       lists are given room to be hit accurately. */
+    .combo-opt { padding: 12px; }
+    .admin-del { padding: 10px 12px; font-size: 22px; }
+
+    /* The dropdown opened past the bottom of the screen and under the navigation bar.
+       Kept short enough to sit above it, and it scrolls inside itself. */
+    .combo-list { max-height: 42vh; }
+
     /* iOS gives date inputs an intrinsic width that ignores the card — pin it down */
     .claim-table input[type="date"] {
       width: 100%; min-width: 0; max-width: 100%;
@@ -1173,7 +1196,9 @@
     .tbl-scroll { overflow: visible; }
 
     /* ---- Dialogs, notices and controls ---- */
-    .modal { width: 100%; max-height: 92vh; border-radius: 12px; }
+    /* The overlay's padding is smaller on a phone, so the box may be taller. */
+    .modal { width: 100%; max-height: calc(100vh - 32px); border-radius: 12px; }
+    .modal-overlay { padding: 16px 12px; }
     .modal-head, .modal-body, .modal-foot { padding-left: 16px; padding-right: 16px; }
     .modal-body { overflow-x: auto; } /* a long line scrolls in the table, not the page */
     .modal-foot { flex-wrap: wrap; }
