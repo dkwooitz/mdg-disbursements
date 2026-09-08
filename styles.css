@@ -562,8 +562,13 @@
   }
   .age-flag-badge:hover::after { opacity: 1; visibility: visible; transform: translateY(0); }
   /* A draft has not been submitted, so it is marked out from the claims that have been */
-  .history-table tr.draft-row td { background: var(--accent-soft); }
+  /* Red: started and never submitted. Nobody has seen this claim and nobody is waiting
+     for it — it only becomes a disbursement when it is sent. */
+  .history-table tr.draft-row td { background: var(--danger-tint); }
   .history-table tr.draft-row .ref-no { color: var(--text-dim); font-style: italic; }
+  /* Green: pulled back from the HOD and being worked on. The claim exists and keeps its
+     reference; it is simply in the employee's hands until they send it again. */
+  .history-table tr.recalled-row td { background: var(--success-tint); }
   /* Deleted claims are retracted, not removed: greyed out but still readable and printable */
   .history-table tr.claim-row.deleted-row td { color: var(--text-dim); }
   .history-table tr.claim-row.deleted-row td:not(:last-child) { opacity: .55; }

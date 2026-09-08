@@ -1820,7 +1820,10 @@
     }
     sorted.forEach(c => {
       const tr = document.createElement('tr');
-      tr.className = 'claim-row' + (c.ref === highlightRef ? ' row-new' : '') + (c.deleted ? ' deleted-row' : '');
+      // Recalled and not yet sent back reads as a draft, and is coloured as one — green,
+      // against the red of a claim that has never been submitted at all.
+      tr.className = 'claim-row' + (c.ref === highlightRef ? ' row-new' : '') +
+        (c.deleted ? ' deleted-row' : isRecalled(c) ? ' recalled-row' : '');
 
       const badges = [];
       // No duplicate-kilometres badge here — that flag is for approvers, not the claimant.
@@ -1861,7 +1864,7 @@
       tb.appendChild(tr);
 
       const pr = document.createElement('tr');
-      pr.className = 'progress-row' + (c.deleted ? ' deleted-row' : '');
+      pr.className = 'progress-row' + (c.deleted ? ' deleted-row' : isRecalled(c) ? ' recalled-row' : '');
       pr.innerHTML = '<td colspan="6">' + stepperHtml(c, typeof c.stage === 'number' ? c.stage : 1) + '</td>';
       tb.appendChild(pr);
     });
