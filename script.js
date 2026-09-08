@@ -341,6 +341,75 @@
   const posterBack = document.getElementById('posterBack');
   if (posterBack) posterBack.addEventListener('click', hidePoster);
 
+  /* ---- App key ----
+     The app sits on the open internet until company sign-in is in front of it. The Worker
+     gates the receipt reader and the policy document on a shared key; this is the app's
+     half of that: remember it on the device and send it with those two requests.
+     Declared here, above the Settings wiring that reads it as the page loads. */
+  const KEY_STORE = 'mdg-app-key';
+  const KEY_HEADER = 'X-MDG-Key';
+  function appKey() { try { return localStorage.getItem(KEY_STORE) || ''; } catch (e) { return ''; } }
+  function setAppKey(v) { try { localStorage.setItem(KEY_STORE, v); } catch (e) {} }
+  function keyHeaders(extra) {
+    const h = Object.assign({}, extra || {});
+    const k = appKey();
+    if (k) h[KEY_HEADER] = k;
+    return h;
+  }
+  // A 401 from the Worker means the key is missing or wrong. Say so in one place, in words
+  // that tell the user what to do about it.
+  const KEY_HELP = 'This needs the app key. Enter it under Settings — Finance has it.';
+
+  // Settings page: the shared app key. Checked against the Worker as it is saved, so a
+  // mistyped key is caught here and not later, in the middle of reading a receipt.
+  const appKeyInput = document.getElementById('appKeyInput');
+  const saveAppKeyBtn = document.getElementById('saveAppKey');
+  if (appKeyInput) appKeyInput.value = appKey();
+  if (saveAppKeyBtn) saveAppKeyBtn.addEventListener('click', async () => {
+    const msg = document.getElementById('appKeyMsg');
+    const typed = (appKeyInput.value || '').trim();
+    setAppKey(typed);
+    msg.textContent = 'Checking…';
+    msg.className = 'submit-msg';
+    try {
+      const r = await fetch('/api/key', { headers: keyHeaders() });
+      const d = await r.json().catch(() => ({}));
+      if (!d.required) {
+        msg.textContent = 'No key is needed on this deployment yet. Yours is saved for when one is.';
+        msg.className = 'submit-msg';
+      } else if (r.ok) {
+        msg.textContent = 'Key accepted. The receipt reader and the policy download are unlocked on this device.';
+        msg.className = 'submit-msg ok';
+      } else {
+        msg.textContent = 'That key was not accepted. Check it with Finance.';
+        msg.className = 'submit-msg err';
+      }
+    } catch (e) {
+      msg.textContent = 'Could not reach the app to check the key. It has been saved on this device.';
+      msg.className = 'submit-msg';
+    }
+  });
+
+  // The policy is an internal document, so it is fetched with the key rather than linked
+  // straight at the file — a plain link cannot carry one.
+  const policyBtn = document.getElementById('policyPdfBtn');
+  if (policyBtn) policyBtn.addEventListener('click', async e => {
+    e.preventDefault();
+    const href = policyBtn.getAttribute('href');
+    try {
+      const r = await fetch(href, { headers: keyHeaders() });
+      if (r.status === 401) { showToast(KEY_HELP, 7000); return; }
+      if (!r.ok) { showToast('The policy document could not be downloaded (' + r.status + ').', 5000); return; }
+      const url = URL.createObjectURL(await r.blob());
+      const a = document.createElement('a');
+      a.href = url; a.download = href.replace(/^\//, '');
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (err) {
+      showToast('The policy document could not be downloaded.', 5000);
+    }
+  });
+
   // Settings page: session actions
   const setHubBtn = document.getElementById('setHub');
   if (setHubBtn) setHubBtn.addEventListener('click', () =>
@@ -726,9 +795,10 @@
   async function callAIProxy(base64Data, mimeType, prompt) {
     const resp = await fetch(AI_PROXY_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: keyHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ mimeType: mimeType || 'image/jpeg', base64Data, prompt })
     });
+    if (resp.status === 401) throw new Error(KEY_HELP);
     if (!resp.ok) {
       // The Worker explains itself in JSON; carry that up so a failure is diagnosable.
       let why = 'the reader returned ' + resp.status;

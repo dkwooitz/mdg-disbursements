@@ -1,5 +1,15 @@
+# Everything here is served on the open internet, so only the app itself belongs in it.
 .git
 .wrangler
 .claude
 node_modules
 worker
+
+# Repository files, not app files. They were being served to anyone who asked.
+README.md
+wrangler.jsonc
+.gitignore
+.assetsignore
+
+# The test page drives the app for its own checks; it is not part of the app.
+tests

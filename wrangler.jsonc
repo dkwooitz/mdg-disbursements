@@ -12,7 +12,19 @@
   // Serve the site's files (index.html, styles.css, script.js) as static assets.
   // "." means "the root of the repo" — the folder these files live in.
   // The binding lets the Worker hand a request straight to them.
-  "assets": { "directory": ".", "binding": "ASSETS" },
+  //
+  // A static file is normally served without the Worker ever seeing the request, which is
+  // fast but means a check in the Worker cannot protect one. The policy document must be
+  // checked, so its paths are listed under run_worker_first: the Worker runs, checks the
+  // app key, and then hands the file over itself.
+  "assets": {
+    "directory": ".",
+    "binding": "ASSETS",
+    "run_worker_first": [
+      "/SPO-MDG-HRM-0020-E_Disbursement_Policy.pdf",
+      "/disbursement-policy.pdf"
+    ]
+  },
 
   // The Gemini model the reader uses. Change it here if Google retires this one.
   // The API key is NOT here — it is a secret: npx wrangler secret put GEMINI_API_KEY
