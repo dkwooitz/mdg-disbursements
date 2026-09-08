@@ -34,24 +34,95 @@
   // Kilometre reimbursement rate (Rand per km). Editable by admins; not shown to requestors.
   let KM_RATE = 5.63;
 
-  // Currencies offered on Other Claims. ZAR is home/payment currency.
-  const CUR = {
-    ZAR: { label: 'ZAR (R)' },
-    USD: { label: 'USD ($)' },
-    EUR: { label: 'EUR (€)' },
-    AUD: { label: 'AUD (A$)' },
-    BRL: { label: 'BRL (R$)' },
-    PEN: { label: 'PEN (S/)' }
+  /* ---- Currencies ----
+     Every currency the daily feed carries can be claimed, not a chosen few: a slip can come
+     back from anywhere. The dropdown is built from the currencies actually in the feed, so
+     nothing is offered that cannot be converted. A code the feed knows but this list does
+     not is still offered, under its bare code. ZAR is home and the payment currency. */
+  const CUR_NAMES = {
+    AED: 'UAE Dirham', AFN: 'Afghan Afghani', ALL: 'Albanian Lek', AMD: 'Armenian Dram',
+    ANG: 'Netherlands Antillean Guilder', AOA: 'Angolan Kwanza', ARS: 'Argentine Peso',
+    AUD: 'Australian Dollar', AWG: 'Aruban Florin', AZN: 'Azerbaijani Manat',
+    BAM: 'Bosnia-Herzegovina Mark', BBD: 'Barbadian Dollar', BDT: 'Bangladeshi Taka',
+    BGN: 'Bulgarian Lev', BHD: 'Bahraini Dinar', BIF: 'Burundian Franc', BMD: 'Bermudian Dollar',
+    BND: 'Brunei Dollar', BOB: 'Bolivian Boliviano', BRL: 'Brazilian Real', BSD: 'Bahamian Dollar',
+    BTN: 'Bhutanese Ngultrum', BWP: 'Botswana Pula', BYN: 'Belarusian Ruble', BZD: 'Belize Dollar',
+    CAD: 'Canadian Dollar', CDF: 'Congolese Franc', CHF: 'Swiss Franc', CLP: 'Chilean Peso',
+    CNY: 'Chinese Yuan', COP: 'Colombian Peso', CRC: 'Costa Rican Colon', CUP: 'Cuban Peso',
+    CVE: 'Cape Verdean Escudo', CZK: 'Czech Koruna', DJF: 'Djiboutian Franc', DKK: 'Danish Krone',
+    DOP: 'Dominican Peso', DZD: 'Algerian Dinar', EGP: 'Egyptian Pound', ERN: 'Eritrean Nakfa',
+    ETB: 'Ethiopian Birr', EUR: 'Euro', FJD: 'Fijian Dollar', FKP: 'Falkland Islands Pound',
+    GBP: 'British Pound', GEL: 'Georgian Lari', GHS: 'Ghanaian Cedi', GIP: 'Gibraltar Pound',
+    GMD: 'Gambian Dalasi', GNF: 'Guinean Franc', GTQ: 'Guatemalan Quetzal', GYD: 'Guyanaese Dollar',
+    HKD: 'Hong Kong Dollar', HNL: 'Honduran Lempira', HRK: 'Croatian Kuna', HTG: 'Haitian Gourde',
+    HUF: 'Hungarian Forint', IDR: 'Indonesian Rupiah', ILS: 'Israeli Shekel', INR: 'Indian Rupee',
+    IQD: 'Iraqi Dinar', IRR: 'Iranian Rial', ISK: 'Icelandic Krona', JMD: 'Jamaican Dollar',
+    JOD: 'Jordanian Dinar', JPY: 'Japanese Yen', KES: 'Kenyan Shilling', KGS: 'Kyrgystani Som',
+    KHR: 'Cambodian Riel', KMF: 'Comorian Franc', KRW: 'South Korean Won', KWD: 'Kuwaiti Dinar',
+    KYD: 'Cayman Islands Dollar', KZT: 'Kazakhstani Tenge', LAK: 'Laotian Kip', LBP: 'Lebanese Pound',
+    LKR: 'Sri Lankan Rupee', LRD: 'Liberian Dollar', LSL: 'Lesotho Loti', LYD: 'Libyan Dinar',
+    MAD: 'Moroccan Dirham', MDL: 'Moldovan Leu', MGA: 'Malagasy Ariary', MKD: 'Macedonian Denar',
+    MMK: 'Myanmar Kyat', MNT: 'Mongolian Tugrik', MOP: 'Macanese Pataca', MRU: 'Mauritanian Ouguiya',
+    MUR: 'Mauritian Rupee', MVR: 'Maldivian Rufiyaa', MWK: 'Malawian Kwacha', MXN: 'Mexican Peso',
+    MYR: 'Malaysian Ringgit', MZN: 'Mozambican Metical', NAD: 'Namibian Dollar', NGN: 'Nigerian Naira',
+    NIO: 'Nicaraguan Cordoba', NOK: 'Norwegian Krone', NPR: 'Nepalese Rupee', NZD: 'New Zealand Dollar',
+    OMR: 'Omani Rial', PAB: 'Panamanian Balboa', PEN: 'Peruvian Sol', PGK: 'Papua New Guinean Kina',
+    PHP: 'Philippine Peso', PKR: 'Pakistani Rupee', PLN: 'Polish Zloty', PYG: 'Paraguayan Guarani',
+    QAR: 'Qatari Rial', RON: 'Romanian Leu', RSD: 'Serbian Dinar', RUB: 'Russian Ruble',
+    RWF: 'Rwandan Franc', SAR: 'Saudi Riyal', SBD: 'Solomon Islands Dollar', SCR: 'Seychellois Rupee',
+    SDG: 'Sudanese Pound', SEK: 'Swedish Krona', SGD: 'Singapore Dollar', SHP: 'St Helena Pound',
+    SLE: 'Sierra Leonean Leone', SOS: 'Somali Shilling', SRD: 'Surinamese Dollar', SSP: 'South Sudanese Pound',
+    STN: 'Sao Tome Dobra', SVC: 'Salvadoran Colon', SYP: 'Syrian Pound', SZL: 'Swazi Lilangeni',
+    THB: 'Thai Baht', TJS: 'Tajikistani Somoni', TMT: 'Turkmenistani Manat', TND: 'Tunisian Dinar',
+    TOP: 'Tongan Paanga', TRY: 'Turkish Lira', TTD: 'Trinidad & Tobago Dollar', TWD: 'New Taiwan Dollar',
+    TZS: 'Tanzanian Shilling', UAH: 'Ukrainian Hryvnia', UGX: 'Ugandan Shilling', USD: 'US Dollar',
+    UYU: 'Uruguayan Peso', UZS: 'Uzbekistani Som', VES: 'Venezuelan Bolivar', VND: 'Vietnamese Dong',
+    VUV: 'Vanuatu Vatu', WST: 'Samoan Tala', XAF: 'Central African CFA Franc', XCD: 'East Caribbean Dollar',
+    XOF: 'West African CFA Franc', XPF: 'CFP Franc', YER: 'Yemeni Rial', ZAR: 'South African Rand',
+    ZMW: 'Zambian Kwacha', ZWL: 'Zimbabwean Dollar'
   };
-  // Value of 1 unit of each currency in ZAR. Indicative fallback (~Jun 2026);
-  // overwritten by the live daily feed on load.
+
+  // Value of 1 unit of each currency in ZAR. Indicative fallback (~Jun 2026), replaced by
+  // the whole daily feed on load.
   let RATES = { ZAR: 1, USD: 16.54, EUR: 18.90, AUD: 11.39, BRL: 3.00, PEN: 4.47 };
   let RATES_DATE = 'indicative';
 
-  function curOptions() {
-    return Object.keys(CUR).map(c =>
-      '<option value="' + c + '"' + (c === 'ZAR' ? ' selected' : '') + '>' + CUR[c].label + '</option>'
+  function curLabel(code) {
+    return CUR_NAMES[code] ? code + ' — ' + CUR_NAMES[code] : code;
+  }
+  // Everything the converter can handle, ZAR first, then alphabetically.
+  function curCodes() {
+    const codes = Object.keys(RATES).filter(c => c !== 'ZAR' && RATES[c] > 0).sort();
+    return ['ZAR'].concat(codes);
+  }
+  function curOptions(selected) {
+    const sel = selected || 'ZAR';
+    return curCodes().map(c =>
+      '<option value="' + c + '"' + (c === sel ? ' selected' : '') + '>' + escapeHtml(curLabel(c)) + '</option>'
     ).join('');
+  }
+  // Put a currency the reader found onto a row. A code the feed has no rate for is added to
+  // the list anyway, so nothing read off a slip is silently thrown away — the line then
+  // shows no ZAR conversion until a rate for it arrives.
+  function setRowCurrency(sel, code) {
+    if (!sel || !code) return;
+    const c = String(code).toUpperCase().trim();
+    if (!/^[A-Z]{3}$/.test(c)) return;
+    if (!sel.querySelector('option[value="' + c + '"]')) {
+      const o = document.createElement('option');
+      o.value = c; o.textContent = curLabel(c);
+      sel.appendChild(o);
+    }
+    sel.value = c;
+  }
+
+  // The feed arrives after the first rows are drawn, so their lists are rebuilt in place.
+  function refreshCurrencySelects() {
+    document.querySelectorAll('.cur-select').forEach(sel => {
+      const keep = sel.value;
+      sel.innerHTML = curOptions(keep);
+      if (keep && RATES[keep]) sel.value = keep;
+    });
   }
 
   function updateRatesLabel() {
@@ -59,7 +130,7 @@
     if (!el) return;
     el.textContent = RATES_DATE === 'indicative'
       ? 'Showing indicative rates — live feed unavailable. Amounts still convert to ZAR.'
-      : 'Live daily rates · updated ' + RATES_DATE + ' · all amounts converted to ZAR for payment.';
+      : 'Live daily rates · updated ' + RATES_DATE + ' · ' + (curCodes().length - 1) + ' currencies · all amounts converted to ZAR for payment.';
   }
 
   // Pull today's rates from a free daily feed and express each currency in ZAR.
@@ -74,12 +145,13 @@
       const d = await r.json();
       if (!d || !d.rates || !d.rates.ZAR) throw new Error('no rates');
       const z = d.rates.ZAR; // ZAR per 1 USD
-      ['USD', 'EUR', 'AUD', 'BRL', 'PEN'].forEach(c => {
-        if (d.rates[c]) RATES[c] = z / d.rates[c]; // foreign -> ZAR
+      Object.keys(d.rates).forEach(c => {
+        if (d.rates[c] > 0) RATES[c] = z / d.rates[c]; // foreign -> ZAR
       });
       RATES.ZAR = 1;
       RATES_DATE = (d.time_last_update_utc || '').slice(0, 16) || 'today';
       updateRatesLabel();
+      refreshCurrencySelects();
       recalc();
       return;
     } catch (e) { /* fall through to the EUR-based fallback */ }
@@ -98,12 +170,13 @@
         if (!eur || !eur.zar) throw new Error('no rates');
         // value of 1 unit of a currency in ZAR = (ZAR per EUR) / (currency per EUR)
         RATES.EUR = eur.zar;
-        ['usd', 'aud', 'brl', 'pen'].forEach(c => {
-          if (eur[c]) RATES[c.toUpperCase()] = eur.zar / eur[c];
+        Object.keys(eur).forEach(c => {
+          if (eur[c] > 0 && /^[a-z]{3}$/.test(c)) RATES[c.toUpperCase()] = eur.zar / eur[c];
         });
         RATES.ZAR = 1;
         RATES_DATE = d.date || 'today';
         updateRatesLabel();
+        refreshCurrencySelects();
         recalc();
         return;
       } catch (e) { /* try the next fallback URL */ }
@@ -335,7 +408,7 @@
 
       let parsed = null;
       try {
-        const prompt = 'This is a receipt for an employee expense claim. Read it and respond with ONLY a JSON object — no markdown, no code fences, no commentary — in exactly this shape: {"date":"the purchase date as YYYY-MM-DD, or empty string if not visible","description":"a concise 2 to 5 word description of the purchase or merchant, suitable for an expense line","amount": the total amount paid as a plain number with no currency symbol or thousands separator, or 0 if not visible,"currency":"the three-letter ISO code of the currency on the receipt; must be one of ZAR, USD, EUR, AUD, BRL, PEN; use ZAR if you cannot tell"}.';
+        const prompt = 'This is a receipt for an employee expense claim. Read it and respond with ONLY a JSON object — no markdown, no code fences, no commentary — in exactly this shape: {"date":"the purchase date as YYYY-MM-DD, or empty string if not visible","description":"a concise 2 to 5 word description of the purchase or merchant, suitable for an expense line","amount": the total amount paid as a plain number with no currency symbol or thousands separator, or 0 if not visible,"currency":"the three-letter ISO 4217 code of the currency printed on the receipt, whatever it is — for example ZAR, USD, EUR, GBP, SGD, AED, INR; work it out from the currency symbol, the wording or the country if no code is shown; use ZAR only if you genuinely cannot tell"}.';
         const raw = await callAIProxy(b64, file.type || 'image/jpeg', prompt);
         parsed = JSON.parse(raw.replace(/```json/g, '').replace(/```/g, '').trim());
       } catch (e) { parsed = null; }   // unreadable: the line is still made, for typing in
@@ -358,7 +431,7 @@
         const amt = parseFloat(parsed.amount);
         if (!isNaN(amt) && amt > 0) tr.querySelector('.amt-input').value = amt;
         const sel = tr.querySelector('.cur-select');
-        if (sel && parsed.currency && CUR[parsed.currency]) sel.value = parsed.currency;
+        setRowCurrency(sel, parsed.currency);
       } else {
         tr.querySelector('input[type=text]').placeholder = 'Could not read it — please type the details in';
       }
@@ -886,7 +959,7 @@
     if (btn) btn.classList.add('busy');
 
     try {
-      const prompt = 'This is a receipt for an employee expense claim. Read it and respond with ONLY a JSON object — no markdown, no code fences, no commentary — in exactly this shape: {"date":"the purchase date as YYYY-MM-DD, or empty string if not visible","description":"a concise 2 to 5 word description of the purchase or merchant, suitable for an expense line","amount": the total amount paid as a plain number with no currency symbol or thousands separator, or 0 if not visible,"currency":"the three-letter ISO code of the currency on the receipt; must be one of ZAR, USD, EUR, AUD, BRL, PEN; use ZAR if you cannot tell"}.';
+      const prompt = 'This is a receipt for an employee expense claim. Read it and respond with ONLY a JSON object — no markdown, no code fences, no commentary — in exactly this shape: {"date":"the purchase date as YYYY-MM-DD, or empty string if not visible","description":"a concise 2 to 5 word description of the purchase or merchant, suitable for an expense line","amount": the total amount paid as a plain number with no currency symbol or thousands separator, or 0 if not visible,"currency":"the three-letter ISO 4217 code of the currency printed on the receipt, whatever it is — for example ZAR, USD, EUR, GBP, SGD, AED, INR; work it out from the currency symbol, the wording or the country if no code is shown; use ZAR only if you genuinely cannot tell"}.';
       const raw = await callAIProxy(b64, file.type || 'image/jpeg', prompt);
       const clean = raw.replace(/```json/g, '').replace(/```/g, '').trim();
       const parsed = JSON.parse(clean);
@@ -907,7 +980,7 @@
       const amt = parseFloat(parsed.amount);
       if (!isNaN(amt) && amt > 0) amtInput.value = amt;
       const sel = tr.querySelector('.cur-select');
-      if (sel && parsed.currency && CUR[parsed.currency]) sel.value = parsed.currency;
+      setRowCurrency(sel, parsed.currency);
       recalc();
     } catch (e) {
       descInput.placeholder = 'Could not read it — please type the details in';
