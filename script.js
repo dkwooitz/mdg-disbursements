@@ -101,6 +101,44 @@
       '<option value="' + c + '"' + (c === sel ? ' selected' : '') + '>' + escapeHtml(curLabel(c)) + '</option>'
     ).join('');
   }
+  /* ---- Reading a document ----
+     What gets uploaded is not always a single till slip. Someone who has lost their slips
+     may attach a bank statement instead, which is allowed, and every purchase on it is a
+     line of the claim. So the reader always answers with a list: one entry for a receipt,
+     one per transaction for a statement. */
+  const MAX_DOC_LINES = 60;   // a statement runs to pages; stop somewhere sensible
+
+  const READ_PROMPT =
+    'This document is either a single receipt or invoice, or a bank or card statement listing several transactions. ' +
+    'Read it and respond with ONLY a JSON object — no markdown, no code fences, no commentary — in exactly this shape: ' +
+    '{"kind":"receipt" or "statement","items":[{"date":"the transaction date as YYYY-MM-DD, or empty string if not visible",' +
+    '"description":"a concise 2 to 5 word description: the merchant, plus the town or country if shown",' +
+    '"amount": the amount as a plain number with no currency symbol or thousands separator,' +
+    '"currency":"the three-letter ISO 4217 code — for example ZAR, USD, EUR, GBP, SGD, CNY; work it out from the symbol, ' +
+    'the wording or the country if no code is printed"}]}. ' +
+    'If it is a single receipt, return exactly one item for the total paid. ' +
+    'If it is a statement, return one item for EVERY purchase line, in the order they appear — do not summarise and do not ' +
+    'leave any out. Ignore anything that is not a purchase: opening and closing balances, subtotals, interest, bank charges, ' +
+    'premiums and payments received. ' +
+    'For a statement, use the amount in the currency the account itself is held in — the main amount column — because that ' +
+    'is what was actually charged, even where a foreign amount is also shown; set currency to that account currency. ' +
+    'If a transaction line is struck through or crossed out, still include it. ' +
+    'If the year is not printed on a line, take it from elsewhere on the document.';
+
+  // Always returns an array of line items, however the reader phrased its answer.
+  function parseReadResult(raw) {
+    const clean = String(raw || '').replace(/```json/g, '').replace(/```/g, '').trim();
+    let data;
+    try { data = JSON.parse(clean); } catch (e) { return []; }
+    const items = Array.isArray(data) ? data
+      : (data && Array.isArray(data.items)) ? data.items
+      : (data && data.amount !== undefined) ? [data]   // an older single-item answer
+      : [];
+    return items
+      .filter(it => it && (it.description || it.amount || it.date))
+      .slice(0, MAX_DOC_LINES);
+  }
+
   // Put a currency the reader found onto a row. A code the feed has no rate for is added to
   // the list anyway, so nothing read off a slip is silently thrown away — the line then
   // shows no ZAR conversion until a rate for it arrives.
@@ -392,6 +430,7 @@
     const batch = [];          // what we have read so far in this batch
     const refused = [];        // already on another claim
     const dupPairs = [];       // two in this batch that look like the same purchase
+    const multiLine = [];      // documents that turned out to hold several transactions
     let done = 0;
 
     const readOne = async (file) => {
@@ -406,46 +445,53 @@
       const twinByFile = batch.find(x => x.hash === hash);
       const fileId = await keepFile(file);
 
-      let parsed = null;
+      let items = [];
       try {
-        const prompt = 'This is a receipt for an employee expense claim. Read it and respond with ONLY a JSON object — no markdown, no code fences, no commentary — in exactly this shape: {"date":"the purchase date as YYYY-MM-DD, or empty string if not visible","description":"a concise 2 to 5 word description of the purchase or merchant, suitable for an expense line","amount": the total amount paid as a plain number with no currency symbol or thousands separator, or 0 if not visible,"currency":"the three-letter ISO 4217 code of the currency printed on the receipt, whatever it is — for example ZAR, USD, EUR, GBP, SGD, AED, INR; work it out from the currency symbol, the wording or the country if no code is shown; use ZAR only if you genuinely cannot tell"}.';
-        const raw = await callAIProxy(b64, file.type || 'image/jpeg', prompt);
-        parsed = JSON.parse(raw.replace(/```json/g, '').replace(/```/g, '').trim());
-      } catch (e) { parsed = null; }   // unreadable: the line is still made, for typing in
+        const raw = await callAIProxy(b64, file.type || 'image/jpeg', READ_PROMPT);
+        items = parseReadResult(raw);
+      } catch (e) { items = []; }
 
-      const sig = parsed ? receiptSig(parsed) : '';
-      const sigHolder = sig ? receiptHolder({ sig: sig }, editingRef) : '';
-      if (sigHolder) { refused.push({ name: file.name, ref: sigHolder }); return; }
+      // Nothing readable still earns a line, to be typed into by hand.
+      if (!items.length) items = [null];
+      if (items.length > 1) multiLine.push({ name: file.name, count: items.length });
 
-      const twin = twinByFile || (sig ? batch.find(x => x.sig && x.sig === sig) : null);
+      for (const item of items) {
+        const sig = item ? receiptSig(item) : '';
+        // A transaction already claimed elsewhere is left out, and said so afterwards.
+        const sigHolder = sig ? receiptHolder({ sig: sig }, editingRef) : '';
+        if (sigHolder) { refused.push({ name: (item.description || file.name), ref: sigHolder }); continue; }
 
-      const tr = freeOtherRow();
-      tr.dataset.fileId = fileId;
-      tr.dataset.fileHash = hash;
-      if (sig) tr.dataset.sig = sig;
-      tr.dataset.proofOnFile = '1';
+        // Lines off the same document are siblings, not duplicates of each other — only a
+        // matching set of details on a different document counts.
+        const twin = twinByFile ? twinByFile
+          : (sig ? batch.find(x => x.sig && x.sig === sig && x.hash !== hash) : null);
 
-      if (parsed) {
-        if (parsed.date) tr.querySelector('input[type=date]').value = parsed.date;
-        if (parsed.description) tr.querySelector('input[type=text]').value = parsed.description;
-        const amt = parseFloat(parsed.amount);
-        if (!isNaN(amt) && amt > 0) tr.querySelector('.amt-input').value = amt;
-        const sel = tr.querySelector('.cur-select');
-        setRowCurrency(sel, parsed.currency);
-      } else {
-        tr.querySelector('input[type=text]').placeholder = 'Could not read it — please type the details in';
+        const tr = freeOtherRow();
+        tr.dataset.fileId = fileId;
+        tr.dataset.fileHash = hash;
+        if (sig) tr.dataset.sig = sig;
+        tr.dataset.proofOnFile = '1';
+
+        if (item) {
+          if (item.date) tr.querySelector('input[type=date]').value = item.date;
+          if (item.description) tr.querySelector('input[type=text]').value = item.description;
+          const amt = parseFloat(item.amount);
+          if (!isNaN(amt) && amt > 0) tr.querySelector('.amt-input').value = amt;
+          setRowCurrency(tr.querySelector('.cur-select'), item.currency);
+        } else {
+          tr.querySelector('input[type=text]').placeholder = 'Could not read it — please type the details in';
+        }
+
+        batch.push({ hash: hash, sig: sig, tr: tr, name: file.name });
+
+        if (twin) {
+          twin.tr.classList.add('dup-row');
+          tr.classList.add('dup-row');
+          dupPairs.push([twin.name, file.name]);
+        }
       }
 
-      const rec = { hash: hash, sig: sig, tr: tr, name: file.name };
-      batch.push(rec);
-
-      if (twin) {
-        twin.tr.classList.add('dup-row');
-        tr.classList.add('dup-row');
-        dupPairs.push([twin.name, file.name]);
-      }
-
-      await restoreRowFiles(tr.parentElement);   // show the slip on the row
+      await restoreRowFiles(otherBody);   // show the document on each line it produced
       recalc();
     };
 
@@ -465,6 +511,10 @@
     if (dumpBtn) dumpBtn.disabled = false;
 
     const notes = [];
+    if (multiLine.length) {
+      notes.push('<strong>' + multiLine.map(m => escapeHtml(m.name) + ' held ' + m.count + ' transactions').join('; ') +
+        '.</strong> A line has been made for each of them. Check every one, and remove any you are not claiming.');
+    }
     if (dupPairs.length) {
       notes.push('<strong>' + dupPairs.length + ' possible duplicate' + (dupPairs.length > 1 ? 's' : '') +
         '.</strong> These slips look like the same purchase, so both lines are marked below. ' +
@@ -577,8 +627,10 @@
         upBtn.innerHTML =
           '<img class="odo-thumb" src="' + url + '" alt="Attached proof">' +
           '<span class="odo-ok" title="Proof attached">&#10003;</span>';
-        keepFile(f).then(id => { if (id) tr.dataset.fileId = id; });
-        if (which === 'other') readReceipt(f, tr, upBtn);
+        keepFile(f).then(id => {
+          if (id) tr.dataset.fileId = id;
+          if (which === 'other') readReceipt(f, tr, upBtn);
+        });
       });
     }
   }
@@ -959,13 +1011,14 @@
     if (btn) btn.classList.add('busy');
 
     try {
-      const prompt = 'This is a receipt for an employee expense claim. Read it and respond with ONLY a JSON object — no markdown, no code fences, no commentary — in exactly this shape: {"date":"the purchase date as YYYY-MM-DD, or empty string if not visible","description":"a concise 2 to 5 word description of the purchase or merchant, suitable for an expense line","amount": the total amount paid as a plain number with no currency symbol or thousands separator, or 0 if not visible,"currency":"the three-letter ISO 4217 code of the currency printed on the receipt, whatever it is — for example ZAR, USD, EUR, GBP, SGD, AED, INR; work it out from the currency symbol, the wording or the country if no code is shown; use ZAR only if you genuinely cannot tell"}.';
-      const raw = await callAIProxy(b64, file.type || 'image/jpeg', prompt);
-      const clean = raw.replace(/```json/g, '').replace(/```/g, '').trim();
-      const parsed = JSON.parse(clean);
+      const raw = await callAIProxy(b64, file.type || 'image/jpeg', READ_PROMPT);
+      const items = parseReadResult(raw);
+      if (!items.length) throw new Error('nothing readable');
+
+      const first = items[0];
 
       // 2) Content duplicate — same date + amount (+ merchant) as a receipt already captured.
-      const sig = receiptSig(parsed);
+      const sig = receiptSig(first);
       if (sig && isReceiptUsed({ sig }, tr)) {
         rejectReceipt(tr, btn, 'Duplicate receipt rejected — a receipt with the same date and amount has already been claimed.');
         descInput.placeholder = prevPlaceholder;
@@ -975,12 +1028,33 @@
       // Accept: add the content fingerprint too, then fill the details.
       if (sig) tr.dataset.sig = sig;
 
-      if (parsed.date) dateInput.value = parsed.date;
-      if (parsed.description) descInput.value = parsed.description;
-      const amt = parseFloat(parsed.amount);
+      if (first.date) dateInput.value = first.date;
+      if (first.description) descInput.value = first.description;
+      const amt = parseFloat(first.amount);
       if (!isNaN(amt) && amt > 0) amtInput.value = amt;
-      const sel = tr.querySelector('.cur-select');
-      setRowCurrency(sel, parsed.currency);
+      setRowCurrency(tr.querySelector('.cur-select'), first.currency);
+
+      // A statement holds many purchases, and each one is a line of the claim. The rest get
+      // rows of their own, all pointing at the same document as their proof.
+      if (items.length > 1) {
+        const fileId = tr.dataset.fileId || '';
+        items.slice(1).forEach(item => {
+          const row = freeOtherRow();
+          row.dataset.fileHash = tr.dataset.fileHash;
+          if (fileId) row.dataset.fileId = fileId;
+          row.dataset.proofOnFile = '1';
+          const s = receiptSig(item);
+          if (s) row.dataset.sig = s;
+          if (item.date) row.querySelector('input[type=date]').value = item.date;
+          if (item.description) row.querySelector('input[type=text]').value = item.description;
+          const a = parseFloat(item.amount);
+          if (!isNaN(a) && a > 0) row.querySelector('.amt-input').value = a;
+          setRowCurrency(row.querySelector('.cur-select'), item.currency);
+        });
+        await restoreRowFiles(otherBody);
+        showToast('That document holds ' + items.length + ' transactions, so a line has been made for each. '
+          + 'Check them and remove any you are not claiming.', 9000);
+      }
       recalc();
     } catch (e) {
       descInput.placeholder = 'Could not read it — please type the details in';

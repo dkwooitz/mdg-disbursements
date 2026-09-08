@@ -82,7 +82,7 @@ async function handleAI(request, env, url) {
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: prompt }, { inline_data: { mime_type: mimeType, data: base64Data } }] }],
-        generationConfig: { temperature: 0, maxOutputTokens: 2048 }
+        generationConfig: { temperature: 0, maxOutputTokens: 8192 }   // a statement can run to many lines
       })
     });
   } catch (e) {
