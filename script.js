@@ -776,12 +776,15 @@
       // No cap: the whole list must be reachable by scrolling, not only by typing.
       return src;
     }
-    function render() {
-      shown = filter(input.value);
+    // Clicking into a box that already holds a value opens the whole list, not the one
+    // entry that matches it — changing a choice should not mean deleting it first.
+    function render(showAll) {
+      shown = filter(showAll ? '' : input.value);
       activeIdx = -1;
       if (!shown.length) { list.innerHTML = '<div class="combo-empty">No matching machine</div>'; list.classList.remove('hidden'); return; }
       list.innerHTML = shown.map((m, i) => '<div class="combo-opt" data-i="' + i + '">' + m + '</div>').join('');
       list.classList.remove('hidden');
+      if (showAll) showCurrentOption(list, shown, input.value);
     }
     function choose(m) { input.value = m; input.classList.remove('field-error'); list.classList.add('hidden'); }
     function highlight() {
@@ -790,8 +793,8 @@
       if (opts[activeIdx]) opts[activeIdx].scrollIntoView({ block: 'nearest' });
     }
 
-    input.addEventListener('focus', render);
-    input.addEventListener('input', render);
+    input.addEventListener('focus', () => render(true));
+    input.addEventListener('input', () => render(false));
     input.addEventListener('keydown', e => {
       const opts = list.querySelectorAll('.combo-opt');
       if (e.key === 'ArrowDown') { e.preventDefault(); if (!opts.length) return; activeIdx = Math.min(activeIdx + 1, opts.length - 1); highlight(); }
@@ -1247,6 +1250,17 @@
     if (o) return 'Other claims';
     return '—';
   }
+  // When the whole list opens over a box that already holds a value, put that value in view
+  // and mark it, so changing a choice among hundreds does not start with a long scroll.
+  function showCurrentOption(list, shown, value) {
+    const i = shown.indexOf(value);
+    if (i < 0) return;
+    const opt = list.querySelectorAll('.combo-opt')[i];
+    if (!opt) return;
+    opt.classList.add('active');
+    list.scrollTop = Math.max(0, opt.offsetTop - (list.clientHeight / 2) + (opt.offsetHeight / 2));
+  }
+
   const DRAFT_TIP = 'This disbursement has not been submitted yet — there is nothing to view or print until it is.';
 
   // Recalled means the employee pulled it back and is working on it again, so to them it is
@@ -2446,8 +2460,9 @@
     if (!input || !list) return;
     let shown = [];
     let activeIdx = -1;
-    function render() {
-      const q = input.value.trim().toLowerCase();
+    // Focus shows everything; typing narrows it.
+    function render(showAll) {
+      const q = showAll ? '' : input.value.trim().toLowerCase();
       const items = withNA(getItems());
       shown = q ? items.filter(p => p.toLowerCase().includes(q)) : items;
       activeIdx = -1;
@@ -2455,6 +2470,7 @@
         ? shown.map((p, i) => '<div class="combo-opt" data-i="' + i + '">' + escapeHtml(p) + '</div>').join('')
         : '<div class="combo-empty">' + emptyText + '</div>';
       list.classList.remove('hidden');
+      if (showAll) showCurrentOption(list, shown, input.value);
     }
     function choose(p) { input.value = p; input.classList.remove('field-error'); list.classList.add('hidden'); }
     function highlight() {
@@ -2462,8 +2478,8 @@
       opts.forEach((o, i) => o.classList.toggle('active', i === activeIdx));
       if (opts[activeIdx]) opts[activeIdx].scrollIntoView({ block: 'nearest' });
     }
-    input.addEventListener('focus', render);
-    input.addEventListener('input', render);
+    input.addEventListener('focus', () => render(true));
+    input.addEventListener('input', () => render(false));
     input.addEventListener('keydown', e => {
       const opts = list.querySelectorAll('.combo-opt');
       if (e.key === 'ArrowDown') { e.preventDefault(); if (!opts.length) return; activeIdx = Math.min(activeIdx + 1, opts.length - 1); highlight(); }
@@ -2498,12 +2514,14 @@
       // No cap: the whole list must be reachable by scrolling, not only by typing.
       return src;
     }
-    function render() {
-      shown = filter(input.value);
+    // Focus opens the whole list even when the box already holds a site.
+    function render(showAll) {
+      shown = filter(showAll ? '' : input.value);
       activeIdx = -1;
       if (!shown.length) { list.innerHTML = '<div class="combo-empty">No matching site</div>'; list.classList.remove('hidden'); return; }
       list.innerHTML = shown.map((s, i) => '<div class="combo-opt" data-i="' + i + '">' + escapeHtml(s) + '</div>').join('');
       list.classList.remove('hidden');
+      if (showAll) showCurrentOption(list, shown, input.value);
     }
     function choose(s) { input.value = s; input.classList.remove('field-error'); list.classList.add('hidden'); }
     function highlight() {
@@ -2511,8 +2529,8 @@
       opts.forEach((o, i) => o.classList.toggle('active', i === activeIdx));
       if (opts[activeIdx]) opts[activeIdx].scrollIntoView({ block: 'nearest' });
     }
-    input.addEventListener('focus', render);
-    input.addEventListener('input', render);
+    input.addEventListener('focus', () => render(true));
+    input.addEventListener('input', () => render(false));
     input.addEventListener('keydown', e => {
       const opts = list.querySelectorAll('.combo-opt');
       if (e.key === 'ArrowDown') { e.preventDefault(); if (!opts.length) return; activeIdx = Math.min(activeIdx + 1, opts.length - 1); highlight(); }
