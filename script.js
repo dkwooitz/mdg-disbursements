@@ -999,6 +999,31 @@
     }
     return false;
   }
+  // The same check as the flag, but reporting what matched what: every travelling line that
+  // repeats an earlier claim's route and distance, paired with the claim it repeats. This is
+  // what the approver needs — "which trip, and against which claim" — rather than a bare
+  // warning. Newest claim first. Retracted claims neither appear nor raise a repeat.
+  function kmRepeats() {
+    const inOrder = claims.slice().sort((a, b) => new Date(a.submitted) - new Date(b.submitted));
+    const seen = [];
+    const out = [];
+    for (const c of inOrder) {
+      if (c.deleted) continue;
+      const hits = [];
+      for (const r of (c.km || [])) {
+        const sig = kmSig(r);
+        if (!sig) continue;
+        // The earliest claim carrying this route is the one worth naming: it is the original
+        // journey, and the one an approver would go back to.
+        const earlier = seen.find(p => (p.km || []).some(it => kmSig(it) === sig));
+        if (earlier) hits.push({ row: r, earlier: earlier });
+      }
+      if (hits.length) out.push({ claim: c, hits: hits });
+      seen.push(c);
+    }
+    return out.reverse();
+  }
+
   // Recompute every claim's flag so only a claim that repeats an EARLIER one stays flagged.
   // Retracted claims neither carry a flag nor raise one on the claims that follow them.
   function recomputeKmFlags() {
@@ -2275,6 +2300,9 @@
     document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
     const target = document.getElementById('view-' + view);
     if (target) target.classList.remove('hidden');
+    // Worked out when the page is opened rather than kept up to date behind the scenes, so
+    // the warnings always reflect the claims as they stand right now.
+    if (view === 'admin') renderKmFlags();
   }
 
   /* ---- Detail modal ---- */
@@ -3079,6 +3107,36 @@
     });
   }
 
+  // The repeated-route warnings, for approval staff. Rendered on the Admin page only: this is
+  // the one place in the app a requestor is not meant to be reading.
+  function renderKmFlags() {
+    const box = document.getElementById('adminKmFlags');
+    if (!box) return;
+    const groups = kmRepeats();
+    if (!groups.length) {
+      box.innerHTML = '<p class="flag-empty">No repeated routes. Every travelling claim on file is for a different journey, a different distance, or both.</p>';
+      return;
+    }
+    box.innerHTML = groups.map(g =>
+      '<div class="flag-item">' +
+        '<div class="flag-mark" aria-hidden="true">!</div>' +
+        '<div class="flag-body">' +
+          '<div class="flag-head">' + escapeHtml(g.claim.ref) +
+            (fullName(g.claim.employee) ? ' · ' + escapeHtml(fullName(g.claim.employee)) : '') +
+            ' · submitted ' + fmtDate(g.claim.submitted) + '</div>' +
+          g.hits.map(h =>
+            '<div class="flag-route">' +
+              escapeHtml(h.row.from) + ' → ' + escapeHtml(h.row.to) +
+              ' · ' + (parseFloat(h.row.km) || 0) + ' km' +
+            '</div>' +
+            '<div class="flag-match">Same route and distance as ' + escapeHtml(h.earlier.ref) +
+              ', submitted ' + fmtDate(h.earlier.submitted) + '.</div>'
+          ).join('') +
+        '</div>' +
+      '</div>'
+    ).join('');
+  }
+
   function renderAdminSites() {
     const box = document.getElementById('adminSites');
     if (!box) return;
@@ -3182,6 +3240,7 @@
   loadClaims();
   recomputeKmFlags();
   saveClaims();
+  renderKmFlags();
 
   recalc();
 

@@ -343,6 +343,14 @@
         <h1 class="page-title">Admin</h1>
         <p class="page-sub">Manage sites, machines, contacts and the kilometre rate. Access will be restricted to authorised users.</p>
 
+        <!-- For approval staff only. A requestor who could see this would learn to vary the
+             route until it stopped matching, so it lives here and nowhere the claimant looks. -->
+        <section class="card">
+          <h2 class="card-title">Repeated routes</h2>
+          <p class="admin-note">Travelling claims that repeat the exact route and distance of an earlier claim. A repeat is not proof of anything on its own — a regular trip looks the same every time — but the approver should confirm it is a separate journey before approving it. Not shown to requestors.</p>
+          <div class="flag-list" id="adminKmFlags"></div>
+        </section>
+
         <section class="card">
           <h2 class="card-title">Contacts</h2>
           <p class="admin-note">People shown on the Policy page and offered by the policy assistant when a question isn't covered. Update these when roles change.</p>
