@@ -87,6 +87,73 @@
   let RATES = { ZAR: 1, USD: 16.54, EUR: 18.90, AUD: 11.39, BRL: 3.00, PEN: 4.47 };
   let RATES_DATE = 'indicative';
 
+  /* ---- Historical rates ----
+     A purchase is converted at the rate on the day it was made, not the day the claim is
+     submitted. Weeks can pass between the two, and using today's rate would hand the
+     employee a profit or a loss on the currency for no reason.
+
+     Rates are fetched per date and cached. Until a date's rates arrive the line shows
+     today's rate, and it is recalculated the moment they land. A date with no published
+     rates — a weekend, a public holiday — falls back to the last published day before it. */
+  const histRates = {};      // 'YYYY-MM-DD' -> { rates: {CODE: ZAR per unit}, date: actual }
+  const histPending = {};
+
+  function histUrls(dateStr) {
+    return [
+      'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@' + dateStr + '/v1/currencies/zar.min.json',
+      'https://' + dateStr + '.currency-api.pages.dev/v1/currencies/zar.min.json'
+    ];
+  }
+
+  async function loadHistRates(dateStr) {
+    if (histRates[dateStr] || histPending[dateStr]) return;
+    histPending[dateStr] = true;
+    // Markets are shut at weekends, so walk back a few days for the last published rate.
+    for (let back = 0; back < 5; back++) {
+      const d = parseYmd(dateStr);
+      if (!d) break;
+      d.setDate(d.getDate() - back);
+      // Built from the local parts on purpose: toISOString would shift a South African
+      // date back a day and quietly convert at the wrong day's rate.
+      const tryDate = d.getFullYear() + '-' +
+        String(d.getMonth() + 1).padStart(2, '0') + '-' +
+        String(d.getDate()).padStart(2, '0');
+      for (const url of histUrls(tryDate)) {
+        try {
+          const r = await fetch(url);
+          if (!r.ok) continue;
+          const j = await r.json();
+          const zar = j && j.zar;
+          if (!zar) continue;
+          const rates = {};
+          Object.keys(zar).forEach(c => {
+            if (zar[c] > 0 && /^[a-z]{3}$/.test(c)) rates[c.toUpperCase()] = 1 / zar[c];
+          });
+          rates.ZAR = 1;
+          histRates[dateStr] = { rates: rates, date: j.date || tryDate };
+          delete histPending[dateStr];
+          recalc();
+          return;
+        } catch (e) { /* try the mirror, then the day before */ }
+      }
+    }
+    histRates[dateStr] = null;   // nothing published: today's rate stands, and says so
+    delete histPending[dateStr];
+    recalc();
+  }
+
+  // What one unit of a currency was worth in rand on a given day.
+  function rateOn(code, dateStr) {
+    if (!code || code === 'ZAR') return { rate: 1, on: '', pending: false };
+    const today = RATES[code] || 0;
+    if (!dateStr) return { rate: today, on: '', pending: false };
+    const hit = histRates[dateStr];
+    if (hit) return { rate: hit.rates[code] || today, on: hit.date, pending: false };
+    if (hit === null) return { rate: today, on: '', pending: false };   // none published
+    loadHistRates(dateStr);
+    return { rate: today, on: '', pending: true };
+  }
+
   function curLabel(code) {
     return CUR_NAMES[code] ? code + ' — ' + CUR_NAMES[code] : code;
   }
@@ -578,12 +645,21 @@
       const zarEq = tr.querySelector('.zar-eq');
       const rateNote = tr.querySelector('.rate-note');
       const code = (sel && sel.value) || 'ZAR';
-      const rate = RATES[code] || 1;
+      // Converted at the rate on the day of the purchase, not the day of the claim.
+      const when = tr.querySelector('input[type=date]').value;
+      const r = rateOn(code, when);
+      const rate = r.rate || 1;
       const val = parseFloat(amtInput && amtInput.value) || 0;
       const zar = val * rate;
       other += zar;
+      tr.dataset.rate = String(rate);
+      tr.dataset.rateOn = r.on || '';
       if (zarEq) zarEq.textContent = money.format(zar);
-      if (rateNote) rateNote.textContent = code === 'ZAR' ? '' : '@ ' + rate.toFixed(2);
+      if (rateNote) {
+        rateNote.textContent = code === 'ZAR' ? ''
+          : '@ ' + rate.toFixed(4).replace(/0+$/, '').replace(/\.$/, '')
+            + (r.on ? ' · rate on ' + fmtDate(parseYmd(r.on)) : (r.pending ? ' · checking that day…' : ' · today’s rate'));
+      }
     });
 
     document.getElementById('km-total').textContent = money.format(km);
@@ -1561,6 +1637,14 @@
     return stem + refEncode(Date.now() - REF_EPOCH) + refRandom(6);
   }
 
+  // "SGD @ 12,63 (12 Aug 2026)" — what it was converted at, and from which day.
+  function rateLabel(r) {
+    if (!r || !r.currency || r.currency === 'ZAR') return r ? (r.currency || 'ZAR') : 'ZAR';
+    const rate = Number(r.rate || 0);
+    const on = r.rateOn ? ' (' + fmtDate(parseYmd(r.rateOn)) + ')' : '';
+    return r.currency + (rate ? ' @ ' + rate.toFixed(4).replace(/0+$/, '').replace(/\.$/, '') : '') + on;
+  }
+
   function typeLabel(c) {
     const k = c.kmTotal > 0, o = c.otherTotal > 0;
     if (k && o) return 'Travelling + Other';
@@ -1942,7 +2026,8 @@
       const amt = parseFloat(tr.querySelector('.amt-input').value) || 0;
       const hasProof = rowHasProof(tr);
       if (amt > 0 || date || desc) {
-        other.push({ date, desc, currency: cur, amount: amt, rate: RATES[cur] || 1, zar: amt * (RATES[cur] || 1), hasProof, fileId: tr.dataset.fileId || '', hash: tr.dataset.fileHash || '', sig: tr.dataset.sig || '' });
+        const rate = parseFloat(tr.dataset.rate) || (RATES[cur] || 1);
+        other.push({ date, desc, currency: cur, amount: amt, rate: rate, rateOn: tr.dataset.rateOn || '', zar: amt * rate, hasProof, fileId: tr.dataset.fileId || '', hash: tr.dataset.fileHash || '', sig: tr.dataset.sig || '' });
       }
     });
 
@@ -2169,7 +2254,7 @@
     }
     if (c.other.length) {
       h += '<h4>Other claims</h4><table class="detail-tbl"><tr><th>Date</th><th>Description</th><th>Cur</th><th style="text-align:right">Amount</th><th style="text-align:right">ZAR</th></tr>';
-      c.other.forEach(r => h += '<tr><td>' + (r.date || '—') + '</td><td>' + (r.desc || '') + '</td><td>' + r.currency + '</td><td style="text-align:right">' + r.amount.toFixed(2) + '</td><td style="text-align:right">' + money.format(r.zar) + '</td></tr>');
+      c.other.forEach(r => h += '<tr><td>' + (r.date || '—') + '</td><td>' + (r.desc || '') + '</td><td>' + escapeHtml(rateLabel(r)) + '</td><td style="text-align:right">' + r.amount.toFixed(2) + '</td><td style="text-align:right">' + money.format(r.zar) + '</td></tr>');
       h += '<tr class="tot"><td colspan="4">Total</td><td style="text-align:right">' + money.format(c.otherTotal) + '</td></tr></table>';
     }
     h += attachmentsHtml(c);
@@ -2404,7 +2489,7 @@
     doc.autoTable({
       startY: y, theme: 'grid', styles: { fontSize: 9, cellPadding: 4 },
       head: [['Date', 'Description of Claim', 'Currency', 'Amount', 'Amount (ZAR)']],
-      body: (c.other.length ? c.other : [null]).map(r => r ? [r.date || '', r.desc || '', r.currency || 'ZAR', (r.amount != null ? r.amount.toFixed(2) : ''), money.format(r.zar || 0)] : ['', '', '', '', '']),
+      body: (c.other.length ? c.other : [null]).map(r => r ? [r.date || '', r.desc || '', rateLabel(r), (r.amount != null ? r.amount.toFixed(2) : ''), money.format(r.zar || 0)] : ['', '', '', '', '']),
       foot: [['', '', '', 'Total', money.format(c.otherTotal || 0)]],
       headStyles: { fillColor: NAVY, textColor: 255 }, footStyles: { fillColor: [240, 240, 240], textColor: 20, fontStyle: 'bold' },
       margin: { left: M, right: M }
