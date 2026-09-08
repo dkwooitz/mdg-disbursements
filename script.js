@@ -1551,6 +1551,10 @@
         submitMsg.className = 'submit-msg ok';
         saveClaims();
       }
+      // The claim has gone back to the HOD, so any draft of it is finished with. Leaving it
+      // behind left a Draft row that could be submitted again as a second disbursement.
+      const leftover = readDraft();
+      if (leftover && (!leftover.forRef || leftover.forRef === editingRef)) clearDraft();
       endEdit();
       resetForm();
       showView('previous');
@@ -1754,7 +1758,8 @@
       const dr = document.createElement('tr');
       dr.className = 'claim-row draft-row';
       dr.innerHTML =
-        '<td class="ref"><div class="ref-wrap"><span class="ref-no">Not submitted</span></div></td>' +
+        '<td class="ref"><div class="ref-wrap"><span class="ref-no">' +
+          (draft.forRef ? 'Changes to ' + escapeHtml(draft.forRef) : 'Not submitted') + '</span></div></td>' +
         '<td data-label="Saved">' + fmtDate(draft.savedAt) + '</td>' +
         '<td data-label="Type">' + totals.type + '</td>' +
         '<td class="col-amount" data-label="Amount (ZAR)">' + money.format(totals.grand) + '</td>' +
@@ -1832,9 +1837,12 @@
       const d = readDraft();
       if (!d) { renderPrev(); return; }
       applyDraft(d);
+      const editing = resumeDraftEdit(d);
       if (draftBanner) draftBanner.classList.add('hidden');
       showView('new');
-      showToast('Carrying on with your saved draft. It is not with the HOD until you submit it.', 5500);
+      showToast(editing
+        ? 'Carrying on with your changes to ' + d.forRef + '. Submitting sends that claim back to your HOD — it will not make a second one.'
+        : 'Carrying on with your saved draft. It is not with the HOD until you submit it.', 6500);
     }));
     tb.querySelectorAll('[data-draft-discard]').forEach(b => b.addEventListener('click', () => {
       showConfirm('Discard the saved draft? Everything on it will be lost.', () => {
@@ -1918,6 +1926,16 @@
     restoreRowFiles(otherBody);
 
     recalc();
+  }
+
+  // Reopening a draft that was taken while editing a claim goes back into editing that
+  // claim. Without this, submitting it raised a second, near-identical disbursement.
+  function resumeDraftEdit(d) {
+    if (!d || !d.forRef) return false;
+    const c = claims.find(x => x.ref === d.forRef);
+    if (!c || c.deleted || isHodApproved(c)) return false;   // gone, or no longer editable
+    startEdit(c.ref, c.banking.proofName, c.banking.proofFileId);
+    return true;
   }
 
   function startEdit(ref, proofName, proofFileId) {
@@ -2086,6 +2104,9 @@
     }));
     return {
       savedAt: new Date().toISOString(),
+      // A draft taken while editing a claim belongs to that claim, and submitting it must
+      // update that claim rather than raise a second one alongside it.
+      forRef: editingRef || '',
       site: val('empSite'), machine: val('empMachine'), project: val('empProject'),
       costCentre: val('empCostCentre'), carReg: val('carReg'),
       // proofName matters as much as the id: it is what tells the restored form that a bank
@@ -2188,8 +2209,9 @@
     const d = readDraft();
     if (!d) { clearDraft(); return; }
     applyDraft(d);
+    const editing = resumeDraftEdit(d);
     draftBanner.classList.add('hidden');
-    showToast('Draft restored.', 3500);
+    showToast(editing ? 'Draft restored — you are editing ' + d.forRef + ' again.' : 'Draft restored.', 4500);
   });
   const draftDiscardBtn = document.getElementById('draftDiscard');
   if (draftDiscardBtn) draftDiscardBtn.addEventListener('click', () => {
