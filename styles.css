@@ -561,6 +561,9 @@
     z-index: 60; pointer-events: none;
   }
   .age-flag-badge:hover::after { opacity: 1; visibility: visible; transform: translateY(0); }
+  /* A draft has not been submitted, so it is marked out from the claims that have been */
+  .history-table tr.draft-row td { background: var(--accent-soft); }
+  .history-table tr.draft-row .ref-no { color: var(--text-dim); font-style: italic; }
   /* Deleted claims are retracted, not removed: greyed out but still readable and printable */
   .history-table tr.claim-row.deleted-row td { color: var(--text-dim); }
   .history-table tr.claim-row.deleted-row td:not(:last-child) { opacity: .55; }

@@ -1250,8 +1250,25 @@
     if (o) return 'Other claims';
     return '—';
   }
+  const DRAFT_TIP = 'This disbursement has not been submitted yet — there is nothing to view or print until it is.';
+
+  // Recalled means the employee pulled it back and is working on it again, so to them it is
+  // a draft. The stored status stays "Recalled" for the record; only the wording changes.
+  function isRecalled(c) { return !!c && !c.deleted && c.status === 'Recalled'; }
+  function statusLabel(c) { return isRecalled(c) ? 'Draft' : c.status; }
+
+  // What a saved draft adds up to, for the row that shows it before it is submitted.
+  function draftTotals(d) {
+    const km = (d.km || []).reduce((s, r) => s + (parseFloat(r.km) || 0) * KM_RATE, 0);
+    const other = (d.other || []).reduce((s, r) =>
+      s + (parseFloat(r.amount) || 0) * (RATES[r.currency] || 1), 0);
+    const type = km > 0 && other > 0 ? 'Travelling + Other'
+      : km > 0 ? 'Travelling' : other > 0 ? 'Other claims' : '—';
+    return { km: km, other: other, grand: km + other, type: type };
+  }
+
   function pillFor(status) {
-    const grey = status === 'Recalled' || status === 'Deleted';
+    const grey = status === 'Recalled' || status === 'Deleted' || status === 'Draft';
     const cls = status === 'Approved' ? 'pill-ok' : (status === 'Rejected' ? 'pill-no' : (grey ? 'pill-recalled' : 'pill-wait'));
     return '<span class="pill ' + cls + '">' + status + '</span>';
   }
@@ -1308,8 +1325,34 @@
     if (!tb) return;
     const sorted = claims.slice().sort((a, b) => new Date(b.submitted) - new Date(a.submitted));
     tb.innerHTML = '';
+
+    // A saved draft has never been near the HOD, so it sits at the top with nothing to view
+    // or print yet — only the work in progress and the chance to carry on with it.
+    const draft = readDraft();
+    if (draft && draftHasContent(draft)) {
+      const totals = draftTotals(draft);
+      const dr = document.createElement('tr');
+      dr.className = 'claim-row draft-row';
+      dr.innerHTML =
+        '<td class="ref"><div class="ref-wrap"><span class="ref-no">Not submitted</span></div></td>' +
+        '<td data-label="Saved">' + fmtDate(draft.savedAt) + '</td>' +
+        '<td data-label="Type">' + totals.type + '</td>' +
+        '<td class="col-amount" data-label="Amount (ZAR)">' + money.format(totals.grand) + '</td>' +
+        '<td data-label="Status">' + pillFor('Draft') + '</td>' +
+        '<td class="col-actions">' +
+          '<button class="mini-btn" disabled title="' + DRAFT_TIP + '">View</button> ' +
+          '<button class="mini-btn" disabled title="' + DRAFT_TIP + '">PDF</button> ' +
+          '<button class="mini-btn" data-draft="1">Draft</button> ' +
+          '<button class="mini-btn danger" data-draft-discard="1">Delete</button>' +
+        '</td>';
+      tb.appendChild(dr);
+    }
+
     if (!sorted.length) {
-      tb.innerHTML = '<tr><td colspan="6" class="prev-empty">No claims submitted yet — a submitted claim will appear here.</td></tr>';
+      if (!tb.children.length) {
+        tb.innerHTML = '<tr><td colspan="6" class="prev-empty">No claims submitted yet — a submitted claim will appear here.</td></tr>';
+      }
+      wirePrevActions(tb);
       return;
     }
     sorted.forEach(c => {
@@ -1337,12 +1380,15 @@
       // keeps both buttons, greyed out, so it is clear why they can no longer be used.
       const open = '<button class="mini-btn" data-view="' + c.ref + '">View</button> ' +
         '<button class="mini-btn" data-pdf="' + c.ref + '">PDF</button> ';
+      // A claim that has been recalled is back in the employee's hands and not with anyone
+      // else, so the button says Draft: pressing it carries on where they left off.
+      const reopenLabel = isRecalled(c) ? 'Draft' : 'Recall';
       const actions = c.deleted
         ? open
         : isHodApproved(c)
           ? open + '<button class="mini-btn" disabled title="' + LOCKED_TIP + '">Recall</button> ' +
             '<button class="mini-btn" disabled title="' + LOCKED_TIP + '">Delete</button>'
-          : open + '<button class="mini-btn" data-recall="' + c.ref + '">Recall</button> ' +
+          : open + '<button class="mini-btn" data-recall="' + c.ref + '">' + reopenLabel + '</button> ' +
             '<button class="mini-btn danger" data-delete="' + c.ref + '">Delete</button>';
 
       tr.innerHTML =
@@ -1350,7 +1396,7 @@
         '<td data-label="Submitted">' + fmtDate(c.submitted) + '</td>' +
         '<td data-label="Type">' + typeLabel(c) + '</td>' +
         '<td class="col-amount" data-label="Amount (ZAR)">' + money.format(c.grandTotal) + '</td>' +
-        '<td data-label="Status">' + pillFor(c.status) + '</td>' +
+        '<td data-label="Status">' + pillFor(statusLabel(c)) + '</td>' +
         '<td class="col-actions">' + actions + '</td>';
       tb.appendChild(tr);
 
@@ -1359,10 +1405,29 @@
       pr.innerHTML = '<td colspan="6">' + stepperHtml(c, typeof c.stage === 'number' ? c.stage : 1) + '</td>';
       tb.appendChild(pr);
     });
+    wirePrevActions(tb);
+  }
+
+  function wirePrevActions(tb) {
     tb.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => openClaim(claims.find(x => x.ref === b.dataset.view))));
     tb.querySelectorAll('[data-pdf]').forEach(b => b.addEventListener('click', () => generateFullPDF(claims.find(x => x.ref === b.dataset.pdf))));
     tb.querySelectorAll('[data-recall]').forEach(b => b.addEventListener('click', () => recallClaim(b.dataset.recall)));
     tb.querySelectorAll('[data-delete]').forEach(b => b.addEventListener('click', () => deleteClaim(b.dataset.delete)));
+    tb.querySelectorAll('[data-draft]').forEach(b => b.addEventListener('click', () => {
+      const d = readDraft();
+      if (!d) { renderPrev(); return; }
+      applyDraft(d);
+      if (draftBanner) draftBanner.classList.add('hidden');
+      showView('new');
+      showToast('Carrying on with your saved draft. It is not with the HOD until you submit it.', 5500);
+    }));
+    tb.querySelectorAll('[data-draft-discard]').forEach(b => b.addEventListener('click', () => {
+      showConfirm('Discard the saved draft? Everything on it will be lost.', () => {
+        clearDraft();
+        renderPrev();
+        showToast('Draft discarded.', 3000);
+      });
+    }));
   }
 
   // ---- Recall: reopen a claim into New Claim for editing (progress is preserved) ----
@@ -1605,6 +1670,7 @@
     if (!draftHasContent(d)) { showToast('There is nothing to save yet — fill something in first.', 4000); return; }
     try {
       localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
+      renderPrev();
       showToast(d.proofCount
         ? 'Draft saved. Your attached proofs cannot be saved with it, so you will need to attach them again.'
         : 'Draft saved on this device. Reopen the app to carry on where you left off.', 6000);
@@ -1619,6 +1685,7 @@
   function clearDraft() {
     try { localStorage.removeItem(DRAFT_KEY); } catch (e) {}
     if (draftBanner) draftBanner.classList.add('hidden');
+    renderPrev();
   }
   function applyDraft(d) {
     setVal('empSite', d.site); setVal('empMachine', d.machine); setVal('empProject', d.project); setVal('empCostCentre', d.costCentre); setVal('carReg', d.carReg);
@@ -1810,7 +1877,7 @@
     if (!c) return;
     modalClaim = c;
     document.getElementById('mRef').textContent = c.ref;
-    document.getElementById('mSub').textContent = 'Submitted ' + fmtDateTime(c.submitted) + '  ·  ' + c.status;
+    document.getElementById('mSub').textContent = 'Submitted ' + fmtDateTime(c.submitted) + '  ·  ' + statusLabel(c);
     document.getElementById('mBody').innerHTML = buildDetail(c);
     modal.classList.remove('hidden');
     wireAttachments(document.getElementById('mBody'));
