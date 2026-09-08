@@ -836,7 +836,7 @@
   const updateBankBtn = document.getElementById('updateBankBtn');
   const MAIN_BANK_KEY = 'mdg-bank-main';
 
-  const blankBank = () => ({ holder: '', bank: '', acc: '', proofName: '' });
+  const blankBank = () => ({ holder: '', bank: '', acc: '', proofName: '', proofFileId: '' });
   let currentBankType = 'main';
 
   function loadMainBank() {
@@ -852,7 +852,9 @@
       bank: bankNameEl.value,
       acc: bankAccEl.value.trim(),
       proofName: (bankProofInput.files && bankProofInput.files[0]) ? bankProofInput.files[0].name
-                 : (bankProofBtn.classList.contains('has-file') ? ((bankProofBtn.querySelector('.pf-label') || {}).textContent || '') : '')
+                 : (bankProofBtn.classList.contains('has-file') ? ((bankProofBtn.querySelector('.pf-label') || {}).textContent || '') : ''),
+      // The kept copy of the letter, so a repeat claim carries it without re-uploading.
+      proofFileId: bankProofFileId || ((bankProfiles[currentBankType] || {}).proofFileId) || ''
     };
   }
   function writeBankFields(d) {
@@ -861,6 +863,7 @@
     bankNameEl.value = d.bank || '';
     bankAccEl.value = d.acc || '';
     bankProofInput.value = '';
+    bankProofFileId = d.proofFileId || '';   // switching profile switches which letter is in play
     bankProofBtn.classList.remove('field-error', 'busy');
     if (d.proofName) {
       bankProofBtn.classList.add('has-file');
@@ -967,7 +970,8 @@
         holder: parsed.accountHolder || '',
         bank: matchBankName(parsed.bank),
         acc: parsed.accountNumber ? String(parsed.accountNumber) : '',
-        proofName: file.name
+        proofName: file.name,
+        proofFileId: await keepFile(file)   // kept, so every later claim can carry it
       };
       document.getElementById('buHolder').textContent = pendingMainBank.holder || '—';
       document.getElementById('buBank').textContent = pendingMainBank.bank || '—';
@@ -988,7 +992,8 @@
       holder: pendingMainBank.holder,
       bank: pendingMainBank.bank,
       acc: pendingMainBank.acc,
-      proofName: pendingMainBank.proofName
+      proofName: pendingMainBank.proofName,
+      proofFileId: pendingMainBank.proofFileId || ''
     };
     try { localStorage.setItem(MAIN_BANK_KEY, JSON.stringify(bankProfiles.main)); } catch (e) {}
     if (currentBankType === 'main') writeBankFields(bankProfiles.main);
@@ -1007,8 +1012,18 @@
     bankProofBtn.classList.add('has-file');
     bankProofBtn.classList.remove('field-error');
     bankProofBtn.innerHTML = uploadSvg + '<span class="pf-label">' + f.name + '</span>';
-    keepFile(f).then(id => { bankProofFileId = id; });
-    readBankLetter(f);
+    keepFile(f).then(id => {
+      bankProofFileId = id;
+      // The first letter uploaded for the main account is remembered, so every later claim
+      // carries it without asking for it again. An account that already has one on file is
+      // only changed through "Update banking details", which asks first.
+      if (id && currentBankType === 'main' && !bankProfiles.main.proofFileId) {
+        bankProfiles.main.proofName = f.name;
+        bankProfiles.main.proofFileId = id;
+        try { localStorage.setItem(MAIN_BANK_KEY, JSON.stringify(bankProfiles.main)); } catch (e) {}
+      }
+      readBankLetter(f);
+    });
   });
 
   async function readBankLetter(file) {
