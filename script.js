@@ -170,20 +170,6 @@
   const setLogoutBtn = document.getElementById('setLogout');
   if (setLogoutBtn) setLogoutBtn.addEventListener('click', showPoster);
 
-  // Wipes everything the app keeps on this device, for a clean run at it.
-  const setClearAllBtn = document.getElementById('setClearAll');
-  if (setClearAllBtn) setClearAllBtn.addEventListener('click', () => {
-    showConfirm('Clear everything this app has kept on this device? Submitted claims, any saved draft, '
-      + 'your remembered banking details, every uploaded file and the admin lists all go. This cannot be '
-      + 'undone, and it only affects this device.', () => {
-      ['mdg-claims', 'mdg-draft', 'mdg-bank-main', 'mdg-config', 'mdg-theme']
-        .forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
-      try { indexedDB.deleteDatabase(FILE_DB); } catch (e) {}   // the uploaded files
-      // Reload so every list, form and remembered value is rebuilt from the defaults.
-      setTimeout(() => location.reload(), 400);
-    }, { okText: 'Clear everything' });
-  });
-
   // Account-menu logout also shows the poster
   const menuLogout = document.querySelector('.btn-logout');
   if (menuLogout) menuLogout.addEventListener('click', showPoster);
