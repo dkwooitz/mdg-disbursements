@@ -267,6 +267,16 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6z"/><path d="M18 14l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/></svg>
             <span>Upload a receipt under <b>Proof</b> and it'll read the date, description and amount for you. Please check the details are correct before submitting.</span>
           </div>
+
+          <div class="slip-dump">
+            <input type="file" id="slipDumpInput" accept="image/*,application/pdf" multiple hidden />
+            <button type="button" class="btn btn-primary" id="slipDumpBtn">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:8px;vertical-align:-3px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 9 12 4 17 9"/><line x1="12" y1="4" x2="12" y2="16"/></svg>
+              Upload all your slips at once
+            </button>
+            <span class="dump-status" id="slipDumpStatus"></span>
+          </div>
+          <div class="dump-warning hidden" id="slipDumpWarning"></div>
           <table class="claim-table">
             <thead>
               <tr>

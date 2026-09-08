@@ -252,6 +252,150 @@
   const kmBody = document.getElementById('km-rows');
   const otherBody = document.getElementById('other-rows');
 
+  /* ===== Slip dump =====
+     Ten slips uploaded one at a time is the slowest part of filling in a claim. This takes
+     them all at once, reads each one and writes its line for the employee to check.
+
+     Duplicates are handled differently depending on where they came from. A slip already on
+     another live claim is refused outright — that rule does not bend. Two slips inside the
+     same batch that look like the same purchase are both kept and marked, because only the
+     person who took the photographs knows which one to keep. */
+  const dumpInput = document.getElementById('slipDumpInput');
+  const dumpBtn = document.getElementById('slipDumpBtn');
+  const dumpStatus = document.getElementById('slipDumpStatus');
+  const dumpWarning = document.getElementById('slipDumpWarning');
+  const DUMP_LANES = 3;   // a few at a time: quicker than one by one, gentle on the reader
+
+  if (dumpBtn) dumpBtn.addEventListener('click', () => dumpInput.click());
+  if (dumpInput) dumpInput.addEventListener('change', () => {
+    const files = [...dumpInput.files];
+    dumpInput.value = '';
+    if (files.length) processSlipDump(files);
+  });
+
+  function fileToBase64(file) {
+    return new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result.split(',')[1]);
+      r.onerror = () => rej(new Error('read failed'));
+      r.readAsDataURL(file);
+    });
+  }
+
+  // A row the dump can write into: an untouched one if there is one, otherwise a new one.
+  function freeOtherRow() {
+    const spare = [...otherBody.querySelectorAll('tr')].find(tr =>
+      !tr.dataset.fileId && !tr.querySelector('input[type=text]').value.trim() &&
+      !tr.querySelector('.amt-input').value.trim() && !tr.querySelector('input[type=date]').value);
+    if (spare) return spare;
+    addRow('other');
+    return otherBody.lastElementChild;
+  }
+
+  function setDumpStatus(text) { if (dumpStatus) dumpStatus.textContent = text || ''; }
+
+  async function processSlipDump(files) {
+    if (dumpBtn) dumpBtn.disabled = true;
+    if (dumpWarning) { dumpWarning.classList.add('hidden'); dumpWarning.textContent = ''; }
+    document.querySelectorAll('#other-rows tr.dup-row').forEach(tr => tr.classList.remove('dup-row'));
+
+    const batch = [];          // what we have read so far in this batch
+    const refused = [];        // already on another claim
+    const dupPairs = [];       // two in this batch that look like the same purchase
+    let done = 0;
+
+    const readOne = async (file) => {
+      let b64;
+      try { b64 = await fileToBase64(file); } catch (e) { return; }
+      const hash = cyrb53(b64);
+
+      // Already claimed elsewhere: refuse it and say where it is.
+      const holder = receiptHolder({ hash: hash }, editingRef);
+      if (holder) { refused.push({ name: file.name, ref: holder }); return; }
+
+      const twinByFile = batch.find(x => x.hash === hash);
+      const fileId = await keepFile(file);
+
+      let parsed = null;
+      try {
+        const prompt = 'This is a receipt for an employee expense claim. Read it and respond with ONLY a JSON object — no markdown, no code fences, no commentary — in exactly this shape: {"date":"the purchase date as YYYY-MM-DD, or empty string if not visible","description":"a concise 2 to 5 word description of the purchase or merchant, suitable for an expense line","amount": the total amount paid as a plain number with no currency symbol or thousands separator, or 0 if not visible,"currency":"the three-letter ISO code of the currency on the receipt; must be one of ZAR, USD, EUR, AUD, BRL, PEN; use ZAR if you cannot tell"}.';
+        const raw = await callAIProxy(b64, file.type || 'image/jpeg', prompt);
+        parsed = JSON.parse(raw.replace(/```json/g, '').replace(/```/g, '').trim());
+      } catch (e) { parsed = null; }   // unreadable: the line is still made, for typing in
+
+      const sig = parsed ? receiptSig(parsed) : '';
+      const sigHolder = sig ? receiptHolder({ sig: sig }, editingRef) : '';
+      if (sigHolder) { refused.push({ name: file.name, ref: sigHolder }); return; }
+
+      const twin = twinByFile || (sig ? batch.find(x => x.sig && x.sig === sig) : null);
+
+      const tr = freeOtherRow();
+      tr.dataset.fileId = fileId;
+      tr.dataset.fileHash = hash;
+      if (sig) tr.dataset.sig = sig;
+      tr.dataset.proofOnFile = '1';
+
+      if (parsed) {
+        if (parsed.date) tr.querySelector('input[type=date]').value = parsed.date;
+        if (parsed.description) tr.querySelector('input[type=text]').value = parsed.description;
+        const amt = parseFloat(parsed.amount);
+        if (!isNaN(amt) && amt > 0) tr.querySelector('.amt-input').value = amt;
+        const sel = tr.querySelector('.cur-select');
+        if (sel && parsed.currency && CUR[parsed.currency]) sel.value = parsed.currency;
+      } else {
+        tr.querySelector('input[type=text]').placeholder = 'Could not read it — please type the details in';
+      }
+
+      const rec = { hash: hash, sig: sig, tr: tr, name: file.name };
+      batch.push(rec);
+
+      if (twin) {
+        twin.tr.classList.add('dup-row');
+        tr.classList.add('dup-row');
+        dupPairs.push([twin.name, file.name]);
+      }
+
+      await restoreRowFiles(tr.parentElement);   // show the slip on the row
+      recalc();
+    };
+
+    // A few in flight at a time.
+    const queue = files.slice();
+    setDumpStatus('Reading ' + files.length + ' slip' + (files.length > 1 ? 's' : '') + '…');
+    await Promise.all(Array.from({ length: Math.min(DUMP_LANES, queue.length) }, async () => {
+      while (queue.length) {
+        const f = queue.shift();
+        await readOne(f);
+        done++;
+        setDumpStatus('Read ' + done + ' of ' + files.length + '…');
+      }
+    }));
+
+    setDumpStatus('');
+    if (dumpBtn) dumpBtn.disabled = false;
+
+    const notes = [];
+    if (dupPairs.length) {
+      notes.push('<strong>' + dupPairs.length + ' possible duplicate' + (dupPairs.length > 1 ? 's' : '') +
+        '.</strong> These slips look like the same purchase, so both lines are marked below. ' +
+        'Check them and remove the one you do not want with the × on its card.');
+    }
+    if (refused.length) {
+      notes.push('<strong>' + refused.length + ' slip' + (refused.length > 1 ? 's were' : ' was') +
+        ' not added</strong> because ' + (refused.length > 1 ? 'they are' : 'it is') + ' already claimed: ' +
+        refused.map(r => escapeHtml(r.name) + ' (on ' + r.ref + ')').join(', ') + '.');
+    }
+    if (notes.length && dumpWarning) {
+      dumpWarning.innerHTML = notes.join('<br><br>');
+      dumpWarning.classList.remove('hidden');
+    }
+
+    const added = batch.length;
+    showToast(added
+      ? added + ' slip' + (added > 1 ? 's' : '') + ' added. Please check each line before submitting.'
+      : 'Nothing was added from those slips.', 6000);
+  }
+
   /* ---- Proof of purchase on other claims ----
      Finance needs a receipt or invoice behind every rand claimed, so an other-claims line
      may not be submitted without one. A recalled claim keeps the proof it already had on
@@ -1759,6 +1903,7 @@
     for (const tr of body.querySelectorAll('tr')) {
       const id = tr.dataset.fileId;
       if (!id) continue;
+      if (tr.querySelector('.odo-thumb')) continue;   // already showing — nothing to redo
       const rec = await readKeptFile(id);
       const btn = tr.querySelector('.odo-btn');
       if (!rec || !btn) continue;
