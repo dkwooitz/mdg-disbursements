@@ -359,6 +359,74 @@
   // A 401 from the Worker means the key is missing or wrong. Say so in one place, in words
   // that tell the user what to do about it.
   const KEY_HELP = 'This needs the app key. Enter it under Settings — Finance has it.';
+  // Marks the one failure that is not a fault: the device simply has not been given the
+  // key. Everything that calls the reader checks for this, because "could not read it"
+  // sends someone hunting for a problem that is not there.
+  function keyError() { const e = new Error(KEY_HELP); e.keyNeeded = true; return e; }
+  function isKeyError(e) { return !!(e && e.keyNeeded); }
+
+  // Checks a key with the Worker. Resolves 'ok', 'wrong', 'none needed' or 'unreachable'.
+  async function checkAppKey(key) {
+    try {
+      const h = {};
+      if (key) h[KEY_HEADER] = key;
+      const r = await fetch('/api/key', { headers: h });
+      const d = await r.json().catch(() => ({}));
+      if (!d.required) return 'none needed';
+      return r.ok ? 'ok' : 'wrong';
+    } catch (e) { return 'unreachable'; }
+  }
+
+  /* Asks for the key where it is needed, rather than sending someone to Settings in the
+     middle of a claim. Resolves true once a key the Worker accepts has been saved. */
+  const keyModal = document.getElementById('keyModal');
+  let keyAsk = null;
+  function askAppKey(why) {
+    if (!keyModal) return Promise.resolve(false);
+    if (keyAsk) return keyAsk;            // one dialog, however many receipts are waiting
+    const input = document.getElementById('keyModalInput');
+    const err = document.getElementById('keyModalErr');
+    const msg = document.getElementById('keyModalMsg');
+    if (why) msg.textContent = why;
+    input.value = appKey();
+    err.classList.add('hidden');
+    keyModal.classList.remove('hidden');
+    setTimeout(() => input.focus(), 50);
+    keyAsk = new Promise(resolve => {
+      const done = result => {
+        keyModal.classList.add('hidden');
+        save.removeEventListener('click', onSave);
+        cancel.removeEventListener('click', onCancel);
+        input.removeEventListener('keydown', onKey);
+        keyAsk = null;
+        resolve(result);
+      };
+      const save = document.getElementById('keyModalSave');
+      const cancel = document.getElementById('keyModalCancel');
+      const onSave = async () => {
+        const typed = (input.value || '').trim();
+        if (!typed) return;
+        save.disabled = true;
+        const verdict = await checkAppKey(typed);
+        save.disabled = false;
+        if (verdict === 'wrong') {
+          err.textContent = 'That key was not accepted. Check it with Finance.';
+          err.classList.remove('hidden');
+          return;
+        }
+        setAppKey(typed);
+        const box = document.getElementById('appKeyInput');
+        if (box) box.value = typed;
+        done(verdict === 'ok' || verdict === 'none needed');
+      };
+      const onCancel = () => done(false);
+      const onKey = e => { if (e.key === 'Enter') { e.preventDefault(); onSave(); } };
+      save.addEventListener('click', onSave);
+      cancel.addEventListener('click', onCancel);
+      input.addEventListener('keydown', onKey);
+    });
+    return keyAsk;
+  }
 
   // Settings page: the shared app key. Checked against the Worker as it is saved, so a
   // mistyped key is caught here and not later, in the middle of reading a receipt.
@@ -564,6 +632,7 @@
     const refused = [];        // already on another claim
     const dupPairs = [];       // two in this batch that look like the same purchase
     const multiLine = [];      // documents that turned out to hold several transactions
+    let keyRefused = false;    // the device is not unlocked, so nothing could be read
     let done = 0;
 
     const readOne = async (file) => {
@@ -582,7 +651,18 @@
       try {
         const raw = await callAIProxy(b64, file.type || 'image/jpeg', READ_PROMPT);
         items = parseReadResult(raw);
-      } catch (e) { items = []; }
+      } catch (e) {
+        // A locked device would otherwise turn a dump of twenty slips into twenty empty
+        // lines. Ask once, then read this one properly.
+        if (isKeyError(e)) {
+          if (await askAppKey('This device has not been given the app key yet, so it cannot read the slips you have just uploaded. Ask Finance for the key and enter it here — it is only needed once on each phone or computer.')) {
+            try { items = parseReadResult(await callAIProxy(b64, file.type || 'image/jpeg', READ_PROMPT)); }
+            catch (again) { items = []; }
+          } else {
+            keyRefused = true;
+          }
+        }
+      }
 
       // Nothing readable still earns a line, to be typed into by hand.
       if (!items.length) items = [null];
@@ -657,6 +737,11 @@
       notes.push('<strong>' + refused.length + ' slip' + (refused.length > 1 ? 's were' : ' was') +
         ' not added</strong> because ' + (refused.length > 1 ? 'they are' : 'it is') + ' already claimed: ' +
         refused.map(r => escapeHtml(r.name) + ' (on ' + r.ref + ')').join(', ') + '.');
+    }
+    if (keyRefused) {
+      notes.push('<strong>The reader is locked on this device.</strong> Your slips are attached and a line has been '
+        + 'made for each, but the details could not be read in for you. Enter the app key under Settings — Finance '
+        + 'has it — or type the details in yourself.');
     }
     if (notes.length && dumpWarning) {
       dumpWarning.innerHTML = notes.join('<br><br>');
@@ -802,7 +887,7 @@
       headers: keyHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ mimeType: mimeType || 'image/jpeg', base64Data, prompt })
     });
-    if (resp.status === 401) throw new Error(KEY_HELP);
+    if (resp.status === 401) throw keyError();
     if (!resp.ok) {
       // The Worker explains itself in JSON; carry that up so a failure is diagnosable.
       let why = 'the reader returned ' + resp.status;
@@ -888,8 +973,11 @@
         policyA.textContent = answer;
       }
     } catch (e) {
-      policyA.innerHTML = '<p>The policy assistant is unavailable right now. ' +
-        'Please read the policy above, or contact:</p>' + contactsHtml();
+      policyA.innerHTML = isKeyError(e)
+        ? '<p>The policy assistant is locked on this device until the app key is entered ' +
+          '(Settings &rarr; App key). Please read the policy above, or contact:</p>' + contactsHtml()
+        : '<p>The policy assistant is unavailable right now. ' +
+          'Please read the policy above, or contact:</p>' + contactsHtml();
     } finally {
       policyAskBtn.disabled = false;
     }
@@ -1279,8 +1367,18 @@
       }
       recalc();
     } catch (e) {
-      descInput.placeholder = 'Could not read it — please type the details in';
-      setTimeout(() => { descInput.placeholder = prevPlaceholder; }, 4500);
+      // Not being given the key is not the same as a receipt that cannot be read. Saying
+      // "could not read it" sent people looking for a problem with their slip when the
+      // device simply needed unlocking, so ask for the key and read it properly.
+      if (isKeyError(e)) {
+        descInput.placeholder = prevPlaceholder;
+        if (btn) btn.classList.remove('busy');
+        if (await askAppKey()) { readReceipt(file, tr, btn); return; }
+        showToast('The receipt reader is locked on this device until the app key is entered. You can still type the details in yourself.', 7000);
+      } else {
+        descInput.placeholder = 'Could not read it — please type the details in';
+        setTimeout(() => { descInput.placeholder = prevPlaceholder; }, 4500);
+      }
     } finally {
       if (btn) btn.classList.remove('busy');
       if (descInput.placeholder === 'Reading receipt…') descInput.placeholder = prevPlaceholder;
@@ -1521,7 +1619,12 @@
       bankUpdateConfirm.disabled = false;
       bankUpdateUploadBtn.innerHTML = uploadSvg + '<span class="pf-label">' + escapeHtml(file.name) + '</span>';
     } catch (e) {
-      bankUpdateUploadBtn.innerHTML = uploadSvg + '<span class="pf-label">Could not read it — try another letter</span>';
+      if (isKeyError(e)) {
+        bankUpdateUploadBtn.innerHTML = uploadSvg + '<span class="pf-label">The reader is locked — enter the app key</span>';
+        askAppKey();
+      } else {
+        bankUpdateUploadBtn.innerHTML = uploadSvg + '<span class="pf-label">Could not read it — try another letter</span>';
+      }
     } finally {
       bankUpdateUploadBtn.classList.remove('busy');
     }
@@ -1613,7 +1716,16 @@
     } catch (e) {
       // Say so rather than leaving three blank boxes and no explanation. The letter is
       // still attached and still counts as proof — only the reading of it failed.
-      showToast('Could not read the letter automatically. Your letter is attached — please type the account holder, bank and account number in yourself.', 8000);
+      if (isKeyError(e)) {
+        if (await askAppKey('This device has not been given the app key yet, so it cannot read your bank letter. Ask Finance for the key and enter it here — it is only needed once on each phone or computer.')) {
+          bankProofBtn.classList.remove('busy');
+          readBankLetter(file);
+          return;
+        }
+        showToast('The reader is locked on this device. Your letter is attached — please type the account holder, bank and account number in yourself, or enter the app key under Settings.', 8000);
+      } else {
+        showToast('Could not read the letter automatically. Your letter is attached — please type the account holder, bank and account number in yourself.', 8000);
+      }
     } finally {
       bankProofBtn.classList.remove('busy');
       if (label) label.textContent = file.name;

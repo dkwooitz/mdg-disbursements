@@ -596,6 +596,25 @@
   </div>
 </div>
 
+<!-- Asked for on the spot when a device has not been given the app key yet, so the reader
+     can be unlocked where it is being used instead of hunting through Settings. -->
+<div class="modal-overlay hidden" id="keyModal">
+  <div class="modal confirm-modal">
+    <div class="confirm-body">
+      <svg class="key-icon" viewBox="0 0 24 24" role="img" aria-label="Key" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.5 12.5 21 2"/><path d="M17 6l3 3"/><path d="M14 9l3 3"/>
+      </svg>
+      <p id="keyModalMsg">This device has not been given the app key yet, so it cannot read receipts. Ask Finance for the key and enter it here — it is only needed once on each phone or computer.</p>
+      <input type="password" id="keyModalInput" placeholder="App key" autocomplete="off" />
+      <p class="key-err hidden" id="keyModalErr"></p>
+    </div>
+    <div class="modal-foot confirm-foot">
+      <button class="btn btn-ghost" id="keyModalCancel">Not now</button>
+      <button class="btn btn-primary" id="keyModalSave">Save key</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay hidden" id="confirmModal">
   <div class="modal confirm-modal">
     <div class="confirm-body">

@@ -878,6 +878,17 @@
     margin: 0; font-size: var(--fs-body); line-height: 1.5; color: var(--text);
     text-align: justify; hyphens: auto; width: 100%;
   }
+  /* The app-key dialog borrows the confirmation dialog's shape: a mark, the reason, and
+     one thing to do about it. Navy rather than red — nothing has gone wrong here. */
+  .key-icon { flex: none; width: 40px; height: 40px; color: var(--accent); }
+  #keyModalInput {
+    width: 100%; padding: 12px 14px; font: inherit; letter-spacing: 1px;
+    background: var(--field); border: 1px solid var(--border); border-radius: 8px; color: var(--text);
+  }
+  #keyModalInput:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .key-err { color: var(--danger); font-size: var(--fs-sm); text-align: center !important; }
+  .key-err.hidden { display: none; }
+
   /* Two classes, so this beats the .modal-foot flex-end defined further down */
   .modal-foot.confirm-foot { justify-content: space-between; }
   .btn-delete { background: var(--danger); color: var(--mdg-white); border: 0; }
