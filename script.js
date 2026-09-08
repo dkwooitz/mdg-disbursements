@@ -592,7 +592,8 @@
   function rejectReceipt(tr, btn, msg) {
     if (btn) { btn.classList.remove('has-photo', 'busy'); btn.innerHTML = receiptProofSvg + 'Proof'; }
     const input = tr.querySelector('.odo-input'); if (input) input.value = '';
-    delete tr.dataset.fileHash; delete tr.dataset.sig;
+    // The row keeps no trace of a rejected slip — including the copy that was kept of it.
+    delete tr.dataset.fileHash; delete tr.dataset.sig; delete tr.dataset.fileId; delete tr.dataset.proofOnFile;
     showToast(msg, 6500);
   }
   // Signature of a whole disbursement (employee + all line items + total) to catch re-submissions.
@@ -708,6 +709,12 @@
       return;
     }
 
+    // Record the image fingerprint now, not after the AI has read it. Whether the reader
+    // works has nothing to do with whether this is the same slip twice, and if it were only
+    // recorded on success then the duplicate check would quietly stop working whenever the
+    // reader was down.
+    tr.dataset.fileHash = fileHash;
+
     const prevPlaceholder = descInput.placeholder;
     descInput.placeholder = 'Reading receipt…';
     if (btn) btn.classList.add('busy');
@@ -726,8 +733,7 @@
         return;
       }
 
-      // Accept: fingerprint the row, then fill the details.
-      tr.dataset.fileHash = fileHash;
+      // Accept: add the content fingerprint too, then fill the details.
       if (sig) tr.dataset.sig = sig;
 
       if (parsed.date) dateInput.value = parsed.date;
@@ -1463,8 +1469,9 @@
     tr.querySelector('.amt-input').value = (r.amount != null ? r.amount : '');
     if (r.hash) tr.dataset.fileHash = r.hash;
     if (r.sig) tr.dataset.sig = r.sig;
-    // The image itself can't be restored, but the proof is on the claim already.
-    if (r.hasProof) {
+    if (r.fileId) tr.dataset.fileId = r.fileId;   // restoreRowFiles puts the file back on it
+    // A claim recalled from before files were kept has the proof on record but no copy of it.
+    if (r.hasProof && !r.fileId) {
       tr.dataset.proofOnFile = '1';
       const btn = tr.querySelector('.odo-btn');
       if (btn) { btn.classList.add('has-file'); btn.innerHTML = receiptProofSvg + 'On file'; }
@@ -1646,25 +1653,32 @@
 
   function collectDraft() {
     const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+    // The uploaded files themselves are already kept (see keepFile); the draft only has to
+    // remember which ones, along with the fingerprints that catch a duplicate receipt.
     const km = [...kmBody.querySelectorAll('tr')].map(tr => {
       const texts = tr.querySelectorAll('input[type=text]');
       return { date: tr.querySelector('input[type=date]').value,
                from: texts[0] ? texts[0].value : '', to: texts[1] ? texts[1].value : '',
-               km: tr.querySelector('.km-input').value };
+               km: tr.querySelector('.km-input').value,
+               fileId: tr.dataset.fileId || '' };
     });
     const other = [...otherBody.querySelectorAll('tr')].map(tr => ({
       date: tr.querySelector('input[type=date]').value,
       desc: tr.querySelector('input[type=text]').value,
       currency: tr.querySelector('.cur-select').value,
-      amount: tr.querySelector('.amt-input').value
+      amount: tr.querySelector('.amt-input').value,
+      fileId: tr.dataset.fileId || '',
+      hash: tr.dataset.fileHash || '',
+      sig: tr.dataset.sig || ''
     }));
     return {
       savedAt: new Date().toISOString(),
       site: val('empSite'), machine: val('empMachine'), project: val('empProject'),
       costCentre: val('empCostCentre'), carReg: val('carReg'),
-      bank: { holder: val('bankHolder'), bank: val('bankName'), acc: val('bankAcc'), type: currentBankType },
+      bank: { holder: val('bankHolder'), bank: val('bankName'), acc: val('bankAcc'),
+              type: currentBankType, proofFileId: bankProofFileId || '' },
       km, other,
-      proofCount: otherBody.querySelectorAll('.odo-thumb').length
+      proofCount: km.concat(other).filter(r => r.fileId).length
     };
   }
   function draftHasContent(d) {
@@ -1681,7 +1695,7 @@
       localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
       renderPrev();
       showToast(d.proofCount
-        ? 'Draft saved. Your attached proofs cannot be saved with it, so you will need to attach them again.'
+        ? 'Draft saved on this device, with the ' + d.proofCount + ' file' + (d.proofCount > 1 ? 's' : '') + ' you attached. Reopen the app to carry on where you left off.'
         : 'Draft saved on this device. Reopen the app to carry on where you left off.', 6000);
     } catch (e) {
       showToast('Could not save the draft — this device is out of storage space.', 5000);
@@ -1702,14 +1716,40 @@
       setVal('bankHolder', d.bank.holder); setVal('bankName', d.bank.bank); setVal('bankAcc', d.bank.acc);
       currentBankType = d.bank.type === 'other' ? 'other' : 'main';
       if (bankTypeSel) bankTypeSel.value = currentBankType;
+      if (d.bank.proofFileId) bankProofFileId = d.bank.proofFileId;
       updateBankHint();
     }
     kmBody.innerHTML = '';
     (d.km.length ? d.km : [{}]).forEach(r => { addRow('km'); fillKmRow(kmBody.lastElementChild, r); });
     otherBody.innerHTML = '';
-    // No hasProof on a draft row, so a restored line still has to have its receipt attached.
     (d.other.length ? d.other : [{}]).forEach(r => { addRow('other'); fillOtherRow(otherBody.lastElementChild, r); });
+    // The files were kept when they were uploaded, so put them back on their rows.
+    restoreRowFiles(kmBody);
+    restoreRowFiles(otherBody);
     recalc();
+  }
+
+  // Puts an already-kept file back onto its row: the thumbnail for a photograph, and either
+  // way a mark that the row's proof is present, so the line is not asked for it again.
+  async function restoreRowFiles(body) {
+    for (const tr of body.querySelectorAll('tr')) {
+      const id = tr.dataset.fileId;
+      if (!id) continue;
+      const rec = await readKeptFile(id);
+      const btn = tr.querySelector('.odo-btn');
+      if (!rec || !btn) continue;
+      tr.dataset.proofOnFile = '1';
+      if (/^image\//.test(rec.type)) {
+        const url = URL.createObjectURL(rec.blob);
+        btn.classList.remove('busy');
+        btn.classList.add('has-photo');
+        btn.innerHTML = '<img class="odo-thumb" src="' + url + '" alt="Attached proof">' +
+          '<span class="odo-ok" title="Proof attached">&#10003;</span>';
+      } else {
+        btn.classList.add('has-file');
+        btn.innerHTML = receiptProofSvg + 'On file';
+      }
+    }
   }
 
   const draftBanner = document.getElementById('draftBanner');
@@ -1717,7 +1757,7 @@
     if (!draftBanner) return;
     document.getElementById('draftBannerText').textContent =
       'You saved a draft on ' + fmtDateTime(d.savedAt) + '.'
-      + (d.proofCount ? ' Its ' + d.proofCount + ' attached proof' + (d.proofCount > 1 ? 's' : '') + ' will need to be attached again.' : '');
+      + (d.proofCount ? ' The ' + d.proofCount + ' file' + (d.proofCount > 1 ? 's' : '') + ' you attached ' + (d.proofCount > 1 ? 'are' : 'is') + ' still on it.' : '');
     draftBanner.classList.remove('hidden');
   }
   const saveDraftBtn = document.getElementById('saveDraftBtn');
