@@ -705,7 +705,12 @@
     // 1) Exact-image duplicate — caught instantly, before even calling the AI.
     const fileHash = cyrb53(b64);
     if (isReceiptUsed({ hash: fileHash }, tr)) {
-      rejectReceipt(tr, btn, 'Duplicate receipt rejected — this exact receipt has already been used.');
+      // Name the claim holding it, so being refused is something you can act on rather
+      // than a dead end.
+      const holder = receiptHolder({ hash: fileHash }, editingRef);
+      rejectReceipt(tr, btn, holder
+        ? 'This slip is already on ' + holder + ', so it cannot be claimed again.'
+        : 'This slip is already attached to another line on this claim.');
       return;
     }
 
@@ -1470,9 +1475,13 @@
     tr.querySelector('.amt-input').value = (r.amount != null ? r.amount : '');
     if (r.hash) tr.dataset.fileHash = r.hash;
     if (r.sig) tr.dataset.sig = r.sig;
-    if (r.fileId) tr.dataset.fileId = r.fileId;   // restoreRowFiles puts the file back on it
-    // A claim recalled from before files were kept has the proof on record but no copy of it.
-    if (r.hasProof && !r.fileId) {
+    if (r.fileId) tr.dataset.fileId = r.fileId;
+    // The claim already has proof on it, so the line counts as proven the moment it is
+    // reopened — whether or not the file itself can be shown again. restoreRowFiles then
+    // upgrades this to the actual slip where a copy was kept. Without it, reopening a claim
+    // asked for proof that was already there, and re-uploading the same slip was refused as
+    // a duplicate of the claim being edited: nothing the employee could do would work.
+    if (r.hasProof || r.fileId) {
       tr.dataset.proofOnFile = '1';
       const btn = tr.querySelector('.odo-btn');
       if (btn) { btn.classList.add('has-file'); btn.innerHTML = receiptProofSvg + 'On file'; }
@@ -1494,8 +1503,9 @@
     if (bankTypeSel) bankTypeSel.value = currentBankType;
     updateBankHint();
 
-    // Show the previously-attached proof (the file itself can't be restored, but it still counts).
+    // The bank letter that is already on the claim.
     bankProofBtn.classList.remove('field-error', 'busy');
+    bankProofFileId = c.banking.proofFileId || '';
     if (c.banking.proofName) {
       bankProofBtn.classList.add('has-file');
       bankProofBtn.innerHTML = uploadSvg + '<span class="pf-label">' + escapeHtml(c.banking.proofName) + ' (on file)</span>';
@@ -1508,6 +1518,10 @@
     otherBody.innerHTML = '';
     if (c.other && c.other.length) c.other.forEach(r => { addRow('other'); fillOtherRow(otherBody.lastElementChild, r); });
     else { addRow('other'); }
+
+    // Put the kept slips and odometer photos back on their rows, the same as for a draft.
+    restoreRowFiles(kmBody);
+    restoreRowFiles(otherBody);
 
     recalc();
   }
