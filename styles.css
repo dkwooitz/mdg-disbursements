@@ -788,6 +788,12 @@
     opacity: .4; cursor: not-allowed;
     border-color: var(--border); color: var(--text-dim);
   }
+  /* Deleted claim: Download PDF stays in place but cannot be used */
+  .btn:disabled, .btn:disabled:hover {
+    opacity: .4; cursor: not-allowed;
+    background: var(--field); border-color: var(--border); color: var(--text-dim);
+    box-shadow: none; transform: none;
+  }
   .pill-recalled { background: rgba(150,150,160,.18); color: var(--text-dim); }
 
   /* Attachments on the claim detail */

@@ -1735,6 +1735,7 @@
     return typeof c.stage === 'number' && c.stage >= payIdx;
   }
   const LOCKED_TIP = 'Approved by the HOD — this disbursement can no longer be recalled or deleted.';
+  const DELETED_PDF_TIP = 'Deleted — a retracted disbursement cannot be downloaded. It stays on file for audit and can still be viewed here.';
 
   function stepperHtml(c, stage) {
     const nodes = stepsFor(c).map((s, i) =>
@@ -1796,10 +1797,12 @@
       const flagBadges = badges.length ? '<div class="flag-badges">' + badges.join('') + '</div>' : '';
 
       // A deleted claim is retracted, not removed: its reference and record stay on file and
-      // stay readable, but deletion is final, so it keeps only View and PDF. An approved claim
-      // keeps both buttons, greyed out, so it is clear why they can no longer be used.
+      // stay readable, so it keeps View. It loses PDF, so a retracted claim cannot be carried
+      // out of the app on paper and put in front of an approver as though it were live.
       const open = '<button class="mini-btn" data-view="' + c.ref + '">View</button> ' +
-        '<button class="mini-btn" data-pdf="' + c.ref + '">PDF</button> ';
+        (c.deleted
+          ? '<button class="mini-btn" disabled title="' + DELETED_PDF_TIP + '">PDF</button> '
+          : '<button class="mini-btn" data-pdf="' + c.ref + '">PDF</button> ');
       // A claim that has been recalled is back in the employee's hands and not with anyone
       // else, so the button says Draft: pressing it carries on where they left off.
       const reopenLabel = isRecalled(c) ? 'Draft' : 'Recall';
@@ -2365,6 +2368,10 @@
     document.getElementById('mRef').textContent = c.ref;
     document.getElementById('mSub').textContent = 'Submitted ' + fmtDateTime(c.submitted) + '  ·  ' + statusLabel(c);
     document.getElementById('mBody').innerHTML = buildDetail(c);
+    // A deleted claim may be read but not taken away as a document.
+    const mPdf = document.getElementById('mPdf');
+    mPdf.disabled = !!c.deleted;
+    if (c.deleted) mPdf.title = DELETED_PDF_TIP; else mPdf.removeAttribute('title');
     modal.classList.remove('hidden');
     wireAttachments(document.getElementById('mBody'));
   }
@@ -2449,7 +2456,19 @@
     });
   }
 
+  // A deleted disbursement has been retracted from the HOD, so it may not leave the app as a
+  // document: on paper it looks exactly like a live claim, and could be walked to an approver
+  // by hand. The record stays visible under View, where its deleted state is plain to see.
+  // The rule lives with the two functions that actually write the file, so no button, keyboard
+  // route or future caller can get around it.
+  function canDownload(c) {
+    if (!c || !c.deleted) return true;
+    showToast('Disbursement ' + c.ref + ' was deleted and can no longer be downloaded. It stays on file for audit and can still be viewed in the app.', 6500);
+    return false;
+  }
+
   function generatePDF(c, opts) {
+    if (!canDownload(c)) return;
     opts = opts || {};   // { defer: true } hands the document back instead of saving it
     if (!window.jspdf || !window.jspdf.jsPDF) {
       showToast('The PDF library hasn\u2019t loaded — this can happen offline or when the in-app preview blocks external libraries. Open the app in a browser and try again.');
@@ -2597,6 +2616,7 @@
   // The claim form plus every file attached to it, as one PDF.
   async function generateFullPDF(c) {
     if (!c) return;
+    if (!canDownload(c)) return;
     const items = attachmentList(c).filter(i => i.id);
     if (!items.length) { generatePDF(c); return; }   // nothing attached — the form on its own
 
