@@ -1010,6 +1010,32 @@
   /* Right-aligned columns on the desktop table (the phone layout re-aligns them) */
   .history-table .col-amount, .history-table .col-actions { text-align: right; }
 
+  /* The row's actions belong on one line. Left to wrap, Delete drops beneath the other
+     three and reads as though it belongs to the row below. The cell refuses to wrap and
+     claims the width it needs; the buttons tighten instead of stacking as the window
+     narrows, down to the point where the phone layout takes over and stacks them on
+     purpose. */
+  .history-table td.col-actions { white-space: nowrap; }
+  .history-table td.col-actions .mini-btn { white-space: nowrap; }
+  @media (max-width: 1250px) {
+    .history-table td.col-actions .mini-btn { padding: 6px 9px; }
+    .history-table td.col-actions { padding-left: 8px; }
+  }
+  @media (max-width: 1050px) {
+    .history-table td.col-actions .mini-btn { padding: 5px 7px; font-size: 11px; }
+    /* Generous cell padding is the first thing to give up: six columns of it costs more
+       width than the actions themselves, and losing it keeps the table inside the card
+       instead of pushing the whole page sideways. */
+    .history-table th, .history-table td { padding-left: 10px; padding-right: 10px; }
+  }
+  /* Just above the card layout the table is at its tightest: the reference, which may not
+     be broken across lines, and the four actions are what must survive. */
+  @media (max-width: 940px) {
+    .history-table th, .history-table td { padding-left: 7px; padding-right: 7px; }
+    .history-table th { font-size: var(--fs-label); }
+    .history-table td.col-actions { word-spacing: -3px; }   /* the gaps between the buttons */
+  }
+
   @media (max-width: 820px) {
     .glyphs { display: none; }
     .grid-2 { grid-template-columns: 1fr; }
@@ -1135,9 +1161,11 @@
     .toast { left: 12px; right: 12px; bottom: 72px; max-width: none; }
   }
 
-  /* The claims table needs more width than a tablet has, so it becomes a stack of
-     cards from 820px down — the same point at which the shell starts narrowing. */
-  @media (max-width: 820px) {
+  /* The claims table needs more width than a tablet has, so it becomes a stack of cards
+     from 900px down. That is the width at which the reference, the figures and the four
+     actions stop fitting side by side; below it, a card gives them the room instead of
+     the table breaking its own row apart. */
+  @media (max-width: 900px) {
     .history-table, .history-table tbody, .history-table tr, .history-table td { display: block; width: 100%; }
     .history-table thead { display: none; }
     .history-table tr.claim-row {
