@@ -1,0 +1,24 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "capital-management",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["../capital-management/serve-static.js"],
+      "port": 8790
+    },
+    {
+      "name": "veruschies-pdfs",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["../veruschies-pdfs/serve-static.js"],
+      "port": 8788,
+      "autoPort": true
+    },
+    {
+      "name": "physiotrack",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["../physiotrack/serve-static.js"],
+      "port": 8792
+    }
+  ]
+}

@@ -257,16 +257,39 @@ Planned work that turns this prototype into a production system:
 
 ---
 
+## Checks
+
+`tests/index.html` drives the real app in an iframe and checks the rules that protect the
+money: what may be submitted, what recall and delete do, and what the requestor is not
+shown. It needs no install and is never deployed with the app.
+
+To run it, serve the folder and open the page:
+
+```bash
+npx http-server -p 8901 -c-1
+```
+
+then open <http://localhost:8901/tests/index.html> and press **Run the checks**. It takes
+about half a minute and finishes with either "all N checks passed" or a red list of what
+broke. Run it after any change to the claim rules.
+
+---
+
 ## Technical notes
 
-- **Single file:** `mdg-disbursements.html` (HTML + CSS + JavaScript inline).
-- **External libraries (from cdnjs):** jsPDF and jsPDF-AutoTable, used only for PDF
-  generation.
-- **AI proxy:** Supabase Edge Function `gemini-proxy`.
+- **Files:** `index.html`, `styles.css`, `script.js`, served by the Worker in `worker/`.
+- **External libraries (from cdnjs):** jsPDF and jsPDF-AutoTable for PDF generation, and
+  pdf-lib (lazy-loaded) for merging PDF attachments into the downloaded claim.
+- **AI proxy:** `/api/ai` on this app's own Cloudflare Worker. The Gemini key is a Worker
+  secret (`GEMINI_API_KEY`), never in this repo.
+- **App key:** `MDG_APP_KEY`, a Worker secret. While the app is on the open internet it
+  gates the receipt reader and the policy PDF; staff enter it once under Settings. With no
+  secret set, nothing is gated.
 - **Exchange rates:** `open.er-api.com`, with `@fawazahmed0/currency-api` (jsDelivr /
-  Cloudflare Pages) as fallback.
+  Cloudflare Pages) as fallback, converted at the rate on the transaction date.
 - **Hashing:** `cyrb53` (fast, non-cryptographic) for receipt image fingerprints.
-- **Storage keys:** `mdg-theme`, `mdg-config`, `mdg-claims`.
+- **Storage:** `mdg-theme`, `mdg-config`, `mdg-claims`, `mdg-draft`, `mdg-bank-main` and
+  `mdg-app-key` in localStorage; uploaded files in IndexedDB (`mdg-files`).
 - **PDF layout:** modelled on *FRM-MDS-FIN-0002-E, Rev. 00*.
 
 ---

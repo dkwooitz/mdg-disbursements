@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MDG Disbursements — checks</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 14px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; padding: 24px; background: #f5f3f0; color: #23262b; }
+  @media (prefers-color-scheme: dark) { body { background: #1a1c20; color: #e8eaee; } }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p.sub { margin: 0 0 18px; opacity: .75; }
+  #bar { position: sticky; top: 0; padding: 12px 0; background: inherit; }
+  .btn { font: inherit; font-weight: 600; padding: 8px 16px; border-radius: 8px; border: 1px solid #1c4584; background: #1c4584; color: #fff; cursor: pointer; }
+  .btn:disabled { opacity: .5; cursor: progress; }
+  #summary { margin-left: 14px; font-weight: 700; }
+  .case { border-left: 3px solid #bbb; padding: 8px 0 8px 12px; margin: 10px 0; }
+  .case h2 { font-size: 14px; margin: 0 0 4px; }
+  .check { display: flex; gap: 8px; padding: 1px 0; }
+  .mark { width: 1.2em; flex: 0 0 auto; font-weight: 700; }
+  .pass .mark { color: #2e7d46; }
+  .fail .mark { color: #c60c30; }
+  .fail { color: #c60c30; }
+  .why { opacity: .8; }
+  .case.ok { border-left-color: #2e7d46; }
+  .case.bad { border-left-color: #c60c30; }
+  iframe { width: 460px; height: 360px; border: 1px solid #ccc; border-radius: 8px; opacity: .5; }
+  .stage { margin-top: 24px; }
+</style>
+</head>
+<body>
+
+<h1>MDG Disbursements — checks</h1>
+<p class="sub">
+  Drives the real app in the frame below and checks the rules that protect the money: what may
+  be submitted, what recall and delete do, and what the requestor is not shown. Nothing here is
+  part of the app, and this page is never deployed with it.
+</p>
+
+<div id="bar">
+  <button class="btn" id="run">Run the checks</button>
+  <span id="summary"></span>
+</div>
+
+<div id="out"></div>
+
+<div class="stage">
+  <p class="sub">The app under test:</p>
+  <iframe id="app" title="The app under test"></iframe>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════
+   The app has no seams to test through: it is one script that talks to the
+   page. So these checks drive it the way a person does — typing in the fields,
+   clicking the buttons — and then read what it saved. That makes them slower
+   than unit tests but far harder to fool: nothing passes here unless the thing
+   the employee actually does works.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const frame = document.getElementById('app');
+const out = document.getElementById('out');
+let win, doc, box, passed = 0, failed = 0;
+
+/* ---- the harness ---- */
+
+function esc(s) { return String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+
+function group(name) {
+  box = document.createElement('div');
+  box.className = 'case';
+  box.innerHTML = '<h2>' + esc(name) + '</h2>';
+  out.appendChild(box);
+  box.scrollIntoView({ block: 'end' });
+}
+
+function ok(claim, cond, detail) {
+  const line = document.createElement('div');
+  line.className = 'check ' + (cond ? 'pass' : 'fail');
+  line.innerHTML = '<span class="mark">' + (cond ? '✓' : '✗') + '</span><span>' +
+    esc(claim) + (cond || !detail ? '' : ' <span class="why">— ' + esc(detail) + '</span>') + '</span>';
+  box.appendChild(line);
+  if (cond) { passed++; } else { failed++; box.classList.add('bad'); }
+  return cond;
+}
+
+const wait = ms => new Promise(r => setTimeout(r, ms));
+
+// Waits for something to become true rather than sleeping a guessed number of
+// milliseconds, so a slow machine does not turn into a false failure.
+async function until(fn, why, ms) {
+  const limit = Date.now() + (ms || 4000);
+  while (Date.now() < limit) { try { if (fn()) return true; } catch (e) {} await wait(30); }
+  throw new Error('timed out waiting for ' + (why || 'a condition'));
+}
+
+// A clean app, every time: no claims, no draft.
+//
+// The stored files are deliberately left alone. Deleting that database while the previous
+// frame still holds it open blocks the delete, which then stalls the app's first save and
+// takes the receipt fingerprint down with it — a failure in the checks, not in the app.
+// Leftover files are harmless: what a claim may reuse is decided from the claims, not from
+// the file store, and the claims are cleared here.
+async function freshApp() {
+  localStorage.removeItem('mdg-claims');
+  localStorage.removeItem('mdg-draft');
+  await new Promise(res => {
+    frame.onload = res;
+    frame.src = '../index.html?test=' + Date.now();
+  });
+  win = frame.contentWindow;
+  doc = frame.contentDocument;
+  await until(() => doc.getElementById('submitBtn'), 'the app to finish loading');
+  await wait(120);
+}
+
+/* ---- driving the form ---- */
+
+const $ = id => doc.getElementById(id);
+const view = name => doc.querySelector('.nav-item[data-view="' + name + '"]').click();
+const claimsNow = () => { const s = JSON.parse(localStorage.getItem('mdg-claims') || '{"claims":[]}'); return s.claims || []; };
+
+function type(id, value) {
+  const el = $(id);
+  el.value = value;
+  el.dispatchEvent(new win.Event('input', { bubbles: true }));
+  el.dispatchEvent(new win.Event('change', { bubbles: true }));
+}
+
+// Everything the app insists on before it will accept a claim at all. The bank letter is
+// attached as a real file rather than faked, so it survives being saved into a draft and
+// read back the way an employee's would.
+async function fillRequired() {
+  type('empName', 'Diedrik'); type('empSurname', 'Kwooitz');
+  type('empNumber', 'MD12345'); type('empEmail', 'diedrik@masterdrilling.com');
+  type('empSite', 'Venetia'); type('empMachine', 'Overheads');
+  type('empProject', 'N/A'); type('empCostCentre', 'N/A');
+  type('bankHolder', 'D Kwooitz'); type('bankAcc', '1234567890');
+  type('bankName', 'Absa Bank Limited');
+  if (!$('bankProofBtn').classList.contains('has-file')) {
+    const dt = new DataTransfer();
+    dt.items.add(await madeUpSlip(200));
+    $('bankProofInput').files = dt.files;
+    $('bankProofInput').dispatchEvent(new win.Event('change', { bubbles: true }));
+    await until(() => $('bankProofBtn').classList.contains('has-file'), 'the bank letter to attach');
+  }
+}
+
+// A genuine image file, so the app's own resize, fingerprint and store all run for real.
+// Two files made with the same `tint` are byte-identical, which is what the duplicate
+// receipt rule is meant to catch.
+function madeUpSlip(tint) {
+  const c = document.createElement('canvas');
+  c.width = 60; c.height = 40;
+  const g = c.getContext('2d');
+  g.fillStyle = 'rgb(' + (tint % 255) + ',' + ((tint * 7) % 255) + ',' + ((tint * 13) % 255) + ')';
+  g.fillRect(0, 0, 60, 40);
+  return new Promise(res => c.toBlob(b => res(new win.File([b], 'slip' + tint + '.png', { type: 'image/png' })), 'image/png'));
+}
+
+async function attach(tr, tint) {
+  const input = tr.querySelector('.odo-input');
+  const dt = new DataTransfer();
+  dt.items.add(await madeUpSlip(tint));
+  input.files = dt.files;
+  input.dispatchEvent(new win.Event('change', { bubbles: true }));
+}
+
+// Fills the first "other claims" line. `tint` attaches proof; leave it out for no proof.
+async function otherLine(date, desc, amount, tint) {
+  const tr = doc.querySelector('#other-rows tr');
+  const inputs = tr.querySelectorAll('input');
+  const set = (el, v) => { el.value = v; el.dispatchEvent(new win.Event('input', { bubbles: true })); };
+  set(tr.querySelector('input[type=date]'), date);
+  set(tr.querySelector('input[type=text]'), desc);
+  set(tr.querySelector('.amt-input'), String(amount));
+  if (tint !== undefined) {
+    await attach(tr, tint);
+    await until(() => tr.querySelector('.odo-thumb'), 'the proof to attach');
+  }
+  return tr;
+}
+
+// The app may hold a submission for a moment while it finishes checking a receipt, so wait
+// for it to settle rather than reading the result mid-flight.
+async function submit() {
+  $('submitBtn').click();
+  await wait(120);
+  await until(() => !/Finishing with your attachments/.test($('submitMsg').textContent), 'the receipt checks', 12000);
+  await wait(400);
+  return $('submitMsg').textContent;
+}
+
+// The row for a claim in Previous Claims, and the buttons on it.
+function rowFor(ref) {
+  view('previous');
+  const rows = [...doc.querySelectorAll('tr.claim-row')];
+  const tr = rows.find(r => r.querySelector('.ref-no').textContent.includes(ref));
+  if (!tr) return null;
+  return {
+    tr: tr,
+    status: (tr.querySelector('.pill') || { textContent: '' }).textContent.trim(),
+    classes: tr.className,
+    buttons: [...tr.querySelectorAll('.mini-btn')].map(b => ({
+      label: b.textContent.trim(), off: b.disabled, el: b
+    }))
+  };
+}
+function button(row, label) { return row.buttons.find(b => b.label === label); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   The checks
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const CHECKS = [];
+const check = (name, fn) => CHECKS.push({ name, fn });
+
+check('A claim cannot be submitted without proof of what was bought', async () => {
+  await freshApp();
+  await fillRequired();
+  await otherLine('2026-09-01', 'Coffee for the site meeting', 120);   // no proof attached
+  const msg = await submit();
+  ok('the claim is refused', claimsNow().length === 0, 'it was accepted with no proof');
+  ok('the app says why', /proof|attach/i.test(msg), 'said: ' + msg);
+
+  await attach(doc.querySelector('#other-rows tr'), 1);
+  await until(() => doc.querySelector('#other-rows tr .odo-thumb'), 'the proof to attach');
+  await submit();
+  ok('and it goes through once proof is attached', claimsNow().length === 1);
+});
+
+check('Odometer proof stays optional on a travelling claim', async () => {
+  await freshApp();
+  await fillRequired();
+  const tr = doc.querySelector('#km-rows tr');
+  const set = (el, v) => { el.value = v; el.dispatchEvent(new win.Event('input', { bubbles: true })); };
+  set(tr.querySelector('input[type=date]'), '2026-09-01');
+  const texts = tr.querySelectorAll('input[type=text]');
+  set(texts[0], 'Fochville Head Office'); set(texts[1], 'Venetia');
+  set(tr.querySelector('.km-input'), '412');
+  await submit();
+  ok('a travelling claim with no odometer photo is accepted', claimsNow().length === 1);
+});
+
+check('The same receipt cannot be claimed twice', async () => {
+  await freshApp();
+  await fillRequired();
+  await otherLine('2026-09-01', 'Fuel', 500, 7);
+  await submit();
+  ok('the first claim goes through', claimsNow().length === 1);
+
+  view('new');
+  await fillRequired();
+  await otherLine('2026-09-02', 'Fuel again', 500, 7);   // the very same image
+  // The slip is refused as it is attached, which is where the employee is told why.
+  await until(() => /already/i.test((doc.querySelector('.toast') || {}).textContent || ''),
+    'the app to say the slip is already claimed');
+  const said = doc.querySelector('.toast').textContent;
+  ok('the app says which claim already holds the slip', /already on DSB-/.test(said), 'said: ' + said);
+  ok('and the slip is taken off the line', !doc.querySelector('#other-rows tr .odo-thumb'));
+
+  const msg = await submit();
+  ok('the second claim cannot be submitted', claimsNow().length === 1, 'the same receipt was accepted twice');
+  ok('and the submission is refused for want of proof', /proof/i.test(msg), 'said: ' + msg);
+});
+
+check('Recall withdraws a claim from the HOD and sending it again is a new revision', async () => {
+  await freshApp();
+  await fillRequired();
+  await otherLine('2026-09-01', 'Parking', 60, 11);
+  await submit();
+  const ref = claimsNow()[0].ref;
+  ok('the claim is with the HOD', claimsNow()[0].status === 'Pending HOD');
+
+  button(rowFor(ref), 'Recall').el.click();
+  await wait(300);
+  const c = claimsNow()[0];
+  ok('recalling takes it back from the HOD', c.status === 'Recalled', 'status is ' + c.status);
+  ok('and the progress line goes back to filled in', c.stage === 0, 'stage is ' + c.stage);
+
+  const row = rowFor(ref);
+  ok('the button now reads Draft', !!button(row, 'Draft'), 'buttons: ' + row.buttons.map(b => b.label));
+  ok('and the row is marked as recalled', /recalled-row/.test(row.classes), 'classes: ' + row.classes);
+
+  view('new');
+  await submit();
+  const after = claimsNow();
+  ok('sending it again does not raise a second claim', after.length === 1, after.length + ' claims exist');
+  ok('it goes back to the HOD', after[0].status === 'Pending HOD', 'status is ' + after[0].status);
+  ok('and it is marked as a revision', after[0].revision >= 1, 'revision is ' + after[0].revision);
+});
+
+check('A draft saved mid-edit updates the claim instead of duplicating it', async () => {
+  await freshApp();
+  await fillRequired();
+  await otherLine('2026-09-01', 'Airport parking', 250, 21);
+  await submit();
+  const ref = claimsNow()[0].ref;
+
+  button(rowFor(ref), 'Recall').el.click();
+  await wait(300);
+  const desc = doc.querySelector('#other-rows tr input[type=text]');
+  desc.value = 'Airport parking (corrected)';
+  desc.dispatchEvent(new win.Event('input', { bubbles: true }));
+  $('saveDraftBtn').click();
+  await wait(250);
+
+  const draft = JSON.parse(localStorage.getItem('mdg-draft'));
+  ok('the draft remembers which claim it belongs to', draft && draft.forRef === ref, 'forRef is ' + (draft && draft.forRef));
+
+  view('previous');
+  const rows = [...doc.querySelectorAll('tr.claim-row')];
+  ok('no second line appears for the same claim', rows.length === 1, rows.length + ' lines are shown');
+
+  button(rowFor(ref), 'Draft').el.click();
+  await until(() => doc.querySelector('#other-rows tr .odo-thumb'), 'the receipt to come back with the draft');
+  ok('the receipt comes back with it', true);
+  ok('carrying on brings back the unfinished change',
+    doc.querySelector('#other-rows tr input[type=text]').value === 'Airport parking (corrected)',
+    'the form showed the old version instead');
+
+  await submit();
+  const after = claimsNow();
+  ok('submitting updates that claim, it does not raise another', after.length === 1, after.length + ' claims exist');
+  ok('and the draft is cleared away', !localStorage.getItem('mdg-draft'), 'a draft was left behind');
+});
+
+check('A draft with no claim behind it still raises a new one', async () => {
+  await freshApp();
+  await fillRequired();
+  await otherLine('2026-09-03', 'Stationery', 90, 31);
+  $('saveDraftBtn').click();
+  await wait(250);
+  const draft = JSON.parse(localStorage.getItem('mdg-draft'));
+  ok('the draft belongs to no claim', draft && !draft.forRef);
+
+  view('previous');
+  const row = [...doc.querySelectorAll('tr.claim-row')][0];
+  ok('it gets a line of its own', /draft-row/.test(row.className), 'classes: ' + row.className);
+  ok('marked as never submitted', /Not submitted/.test(row.textContent));
+  ok('and it cannot be viewed or downloaded yet',
+    [...row.querySelectorAll('.mini-btn')].filter(b => /View|PDF/.test(b.textContent) && b.disabled).length === 2);
+
+  row.querySelector('[data-draft]').click();
+  await until(() => doc.querySelector('#other-rows tr .odo-thumb'), 'the saved proof to come back', 10000);
+  ok('the proof saved with the draft comes back with it', true);
+  await submit();
+  ok('submitting it creates a claim', claimsNow().length === 1, claimsNow().length + ' claims exist');
+});
+
+check('Deleting retracts a claim but never removes it', async () => {
+  await freshApp();
+  await fillRequired();
+  await otherLine('2026-09-01', 'Toll fees', 180, 41);
+  await submit();
+  const ref = claimsNow()[0].ref;
+
+  button(rowFor(ref), 'Delete').el.click();
+  await wait(200);
+  doc.getElementById('confirmOk').click();
+  await wait(300);
+
+  const c = claimsNow()[0];
+  ok('the claim is still on file', claimsNow().length === 1);
+  ok('it keeps its reference number', c.ref === ref);
+  ok('and it is marked deleted', c.deleted === true);
+
+  const row = rowFor(ref);
+  ok('the line is greyed out', /deleted-row/.test(row.classes), 'classes: ' + row.classes);
+  ok('it can still be read', button(row, 'View') && !button(row, 'View').off);
+  ok('it cannot be downloaded', button(row, 'PDF') && button(row, 'PDF').off, 'the PDF button was still live');
+  ok('and it cannot be recalled or deleted again', row.buttons.length === 2, 'buttons: ' + row.buttons.map(b => b.label));
+});
+
+check('A deleted claim releases its receipts for a corrected claim', async () => {
+  await freshApp();
+  await fillRequired();
+  await otherLine('2026-09-01', 'Fuel', 700, 51);
+  await submit();
+  const ref = claimsNow()[0].ref;
+  button(rowFor(ref), 'Delete').el.click();
+  await wait(200);
+  doc.getElementById('confirmOk').click();
+  await wait(300);
+
+  view('new');
+  await fillRequired();
+  await otherLine('2026-09-01', 'Fuel (claimed again correctly)', 700, 51);   // same receipt
+  await submit();
+  ok('the same receipt may be used on a new claim', claimsNow().filter(c => !c.deleted).length === 1,
+    'the receipt was still held by the deleted claim');
+});
+
+check('Once the HOD has approved, a claim can no longer be recalled or deleted', async () => {
+  await freshApp();
+  await fillRequired();
+  await otherLine('2026-09-01', 'Site supplies', 300, 61);
+  await submit();
+  const ref = claimsNow()[0].ref;
+
+  // Approval happens outside the app for now, so put the claim where an approved one sits.
+  const store = JSON.parse(localStorage.getItem('mdg-claims'));
+  store.claims[0].status = 'Approved';
+  store.claims[0].stage = 2;
+  localStorage.setItem('mdg-claims', JSON.stringify(store));
+  await freshApp.reload();
+
+  const row = rowFor(ref);
+  ok('recall is closed off', button(row, 'Recall') && button(row, 'Recall').off, 'recall was still live');
+  ok('delete is closed off', button(row, 'Delete') && button(row, 'Delete').off, 'delete was still live');
+  ok('but it can still be read and downloaded',
+    !button(row, 'View').off && !button(row, 'PDF').off);
+});
+
+check('A claim submitted more than 90 days after the expense is flagged', async () => {
+  await freshApp();
+  await fillRequired();
+  await otherLine('2026-01-05', 'A receipt from January', 400, 71);
+  await submit();
+  const ref = claimsNow()[0].ref;
+  const row = rowFor(ref);
+  const badge = row.tr.querySelector('.age-flag-badge');
+  ok('the late claim carries a warning', !!badge, 'no warning appeared');
+  ok('and the warning explains itself', badge && /90/.test(badge.getAttribute('data-tip') || ''));
+
+  await freshApp();
+  await fillRequired();
+  await otherLine(new Date().toISOString().slice(0, 10), 'A receipt from today', 400, 72);
+  await submit();
+  const fresh = rowFor(claimsNow()[0].ref);
+  ok('a claim submitted on time is not flagged', !fresh.tr.querySelector('.age-flag-badge'));
+});
+
+check('A repeated route warns the approver and nobody else', async () => {
+  await freshApp();
+  const trip = async (date) => {
+    await fillRequired();
+    const tr = doc.querySelector('#km-rows tr');
+    const set = (el, v) => { el.value = v; el.dispatchEvent(new win.Event('input', { bubbles: true })); };
+    set(tr.querySelector('input[type=date]'), date);
+    const texts = tr.querySelectorAll('input[type=text]');
+    set(texts[0], 'Fochville Head Office'); set(texts[1], 'Venetia');
+    set(tr.querySelector('.km-input'), '412');
+    await submit();
+    view('new');
+  };
+  await trip('2026-08-02');
+  await trip('2026-08-20');
+  ok('both claims are on file', claimsNow().length === 2, claimsNow().length + ' claims exist');
+
+  view('admin');
+  await wait(150);
+  const flags = doc.querySelectorAll('#adminKmFlags .flag-item');
+  ok('the approver is warned about the repeat', flags.length === 1, flags.length + ' warnings shown');
+  ok('and the warning names the earlier claim',
+    flags.length === 1 && /Same route and distance as/.test(flags[0].textContent));
+
+  view('previous');
+  ok('the requestor is told nothing in their claims list',
+    !/repeat|same route|duplicate/i.test(doc.getElementById('prevRows').textContent));
+
+  const row = rowFor(claimsNow()[1].ref);
+  button(row, 'View').el.click();
+  await wait(250);
+  ok('and nothing on the claim itself',
+    !/repeat|same route|duplicate/i.test(doc.getElementById('mBody').textContent));
+  doc.getElementById('mCloseBtn').click();
+});
+
+check('A claim over R10 000 is marked material without telling the requestor', async () => {
+  await freshApp();
+  await fillRequired();
+  await otherLine('2026-09-01', 'Equipment hire', 15000, 81);
+  await submit();
+  const c = claimsNow()[0];
+  ok('the claim is recorded as material', c.material === true || c.grandTotal > 10000);
+  view('previous');
+  ok('the requestor sees no mention of the threshold',
+    !/material|10 ?000|CFO/i.test(doc.getElementById('prevRows').textContent));
+  const row = rowFor(c.ref);
+  button(row, 'View').el.click();
+  await wait(250);
+  ok('and none on the claim itself',
+    !/material|R ?10 ?000|CFO/i.test(doc.getElementById('mBody').textContent));
+  doc.getElementById('mCloseBtn').click();
+});
+
+check('Every reference number is different', async () => {
+  await freshApp();
+  for (let i = 0; i < 3; i++) {
+    view('new');
+    await fillRequired();
+    await otherLine('2026-09-0' + (i + 1), 'Claim ' + i, 100 + i, 90 + i);
+    await submit();
+  }
+  const refs = claimsNow().map(c => c.ref);
+  ok('three claims were made', refs.length === 3, refs.length + ' were made');
+  ok('and no two share a reference', new Set(refs).size === refs.length, refs.join(', '));
+});
+
+/* ---- runner ---- */
+
+// Reloads the app without clearing anything, for checks that set up a state first.
+freshApp.reload = async function () {
+  await new Promise(res => { frame.onload = res; frame.src = '../index.html?test=' + Date.now(); });
+  win = frame.contentWindow;
+  doc = frame.contentDocument;
+  await until(() => doc.getElementById('submitBtn'), 'the app to reload');
+  await wait(120);
+};
+
+document.getElementById('run').addEventListener('click', async () => {
+  const btn = document.getElementById('run');
+  btn.disabled = true;
+  out.innerHTML = '';
+  passed = failed = 0;
+  const summary = document.getElementById('summary');
+  summary.textContent = 'running…';
+
+  for (const c of CHECKS) {
+    group(c.name);
+    try {
+      await c.fn();
+      if (!box.classList.contains('bad')) box.classList.add('ok');
+    } catch (e) {
+      ok('the check ran to the end', false, e && e.message ? e.message : String(e));
+    }
+  }
+
+  summary.textContent = failed === 0
+    ? 'all ' + passed + ' checks passed'
+    : failed + ' of ' + (passed + failed) + ' failed';
+  summary.style.color = failed === 0 ? '#2e7d46' : '#c60c30';
+  window.__results = { passed, failed };
+  btn.disabled = false;
+});
+</script>
+</body>
+</html>

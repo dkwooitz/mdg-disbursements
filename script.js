@@ -433,13 +433,10 @@
   if (sidebarToggleTop) sidebarToggleTop.addEventListener('click', toggleSidebar);
 
   /* ---- Sidebar view switching ---- */  document.querySelectorAll('.nav-item[data-view]').forEach(item => {
-    item.addEventListener('click', () => {
-      const view = item.dataset.view;
-      document.querySelectorAll('.nav-item[data-view]').forEach(n => n.classList.remove('active'));
-      item.classList.add('active');
-      document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
-      document.getElementById('view-' + view).classList.remove('hidden');
-    });
+    // showView, not a second copy of it. This handler used to switch the panels itself,
+    // which meant anything showView does when a page opens — refreshing the approver's
+    // repeated-route warnings — never happened when the page was opened from the sidebar.
+    item.addEventListener('click', () => showView(item.dataset.view));
   });
 
   /* ---- Tabs ---- */
@@ -579,7 +576,7 @@
       if (holder) { refused.push({ name: file.name, ref: holder }); return; }
 
       const twinByFile = batch.find(x => x.hash === hash);
-      const fileId = await keepFile(file);
+      const fileId = await trackFile(keepFile(file));
 
       let items = [];
       try {
@@ -772,9 +769,16 @@
         upBtn.innerHTML =
           '<img class="odo-thumb" src="' + url + '" alt="Attached proof">' +
           '<span class="odo-ok" title="Proof attached">&#10003;</span>';
-        keepFile(f).then(id => {
+        // Reading the slip must not wait on storing it. Hanging one off the other meant a
+        // file store that failed or stalled took the receipt's fingerprint down with it:
+        // the slip still showed as attached, but with nothing to recognise it by, so the
+        // same receipt could be claimed a second time. The two are independent now.
+        if (which === 'other') readReceipt(f, tr, upBtn);
+        trackFile(keepFile(f)).then(id => {
           if (id) tr.dataset.fileId = id;
-          if (which === 'other') readReceipt(f, tr, upBtn);
+          // Silence here would lose the proof without anyone noticing until the claim was
+          // opened again and the slip was gone.
+          else showToast('That file could not be saved on this device, so it may not still be attached when you come back to this claim. Try attaching it again.', 7000);
         });
       });
     }
@@ -907,7 +911,7 @@
   let fileDbPromise = null;
   function openFileDb() {
     if (fileDbPromise) return fileDbPromise;
-    fileDbPromise = new Promise((resolve, reject) => {
+    const opening = new Promise((resolve, reject) => {
       let req;
       try { req = indexedDB.open(FILE_DB, 1); } catch (e) { reject(e); return; }
       req.onupgradeneeded = () => {
@@ -916,8 +920,19 @@
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
+      // Another tab of the app can hold the store open and block this. The browser then
+      // fires neither success nor error, so without these two the promise never settles —
+      // and every upload waiting on it waits for ever, with no error and no sign that
+      // anything is wrong. The claim then saves with its proof missing, which is the one
+      // way this app must never fail.
+      req.onblocked = () => reject(new Error('the file store is open in another tab'));
+      setTimeout(() => reject(new Error('the file store did not open in time')), 8000);
     });
-    return fileDbPromise;
+    // A failure is not remembered: the next upload gets a fresh attempt rather than
+    // inheriting a broken one for as long as the page stays open.
+    fileDbPromise = opening;
+    opening.catch(() => { fileDbPromise = null; });
+    return opening;
   }
 
   function newFileId() {
@@ -944,6 +959,31 @@
     });
   }
 
+  /* A file is stored while the form stays usable, which is what makes the app feel quick.
+     But a claim or a draft saved during that moment was saved without the file's id, and
+     the slip was simply gone when the claim was opened again — with nothing to say so.
+     Everything that saves now waits for these to finish first. */
+  let filesInFlight = 0;
+  function trackFile(p) {
+    filesInFlight++;
+    return p.then(
+      v => { filesInFlight--; return v; },
+      e => { filesInFlight--; throw e; }
+    );
+  }
+  // Resolves once nothing is being stored, or after a wait long enough that something has
+  // clearly gone wrong — saving late is better than never saving at all.
+  function filesSettled() {
+    return new Promise(resolve => {
+      const deadline = Date.now() + 10000;
+      const tick = () => {
+        if (filesInFlight <= 0 || Date.now() > deadline) { resolve(filesInFlight <= 0); return; }
+        setTimeout(tick, 50);
+      };
+      tick();
+    });
+  }
+
   async function keepFile(file) {
     if (!file) return '';
     try {
@@ -953,7 +993,9 @@
       await new Promise((res, rej) => {
         const tx = db.transaction(FILE_STORE, 'readwrite');
         tx.objectStore(FILE_STORE).put(rec);
-        tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+        tx.oncomplete = res;
+        tx.onerror = () => rej(tx.error);
+        tx.onabort = () => rej(tx.error || new Error('the file could not be stored'));
       });
       return rec.id;
     } catch (e) {
@@ -1149,6 +1191,11 @@
     const descInput = tr.querySelector('input[type=text]');
     const amtInput  = tr.querySelector('.amt-input');
 
+    // Marks the line as still being looked at, so a submission a fraction of a second later
+    // waits for the duplicate check rather than racing past it.
+    tr.dataset.checking = '1';
+    const done = () => { delete tr.dataset.checking; };
+
     let b64;
     try {
       b64 = await new Promise((res, rej) => {
@@ -1157,7 +1204,7 @@
         r.onerror = () => rej(new Error('read failed'));
         r.readAsDataURL(file);
       });
-    } catch (e) { return; }
+    } catch (e) { done(); return; }
 
     // 1) Exact-image duplicate — caught instantly, before even calling the AI.
     const fileHash = cyrb53(b64);
@@ -1168,6 +1215,7 @@
       rejectReceipt(tr, btn, holder
         ? 'This slip is already on ' + holder + ', so it cannot be claimed again.'
         : 'This slip is already attached to another line on this claim.');
+      done();
       return;
     }
 
@@ -1176,6 +1224,9 @@
     // recorded on success then the duplicate check would quietly stop working whenever the
     // reader was down.
     tr.dataset.fileHash = fileHash;
+    // The fingerprint is on the line, so the duplicate rule can answer for it now. What
+    // follows only fills in the details, and a submission need not wait for that.
+    done();
 
     const prevPlaceholder = descInput.placeholder;
     descInput.placeholder = 'Reading receipt…';
@@ -1461,7 +1512,7 @@
         bank: matchBankName(parsed.bank),
         acc: parsed.accountNumber ? String(parsed.accountNumber) : '',
         proofName: file.name,
-        proofFileId: await keepFile(file)   // kept, so every later claim can carry it
+        proofFileId: await trackFile(keepFile(file))   // kept, so every later claim can carry it
       };
       document.getElementById('buHolder').textContent = pendingMainBank.holder || '—';
       document.getElementById('buBank').textContent = pendingMainBank.bank || '—';
@@ -1502,7 +1553,7 @@
     bankProofBtn.classList.add('has-file');
     bankProofBtn.classList.remove('field-error');
     bankProofBtn.innerHTML = uploadSvg + '<span class="pf-label">' + f.name + '</span>';
-    keepFile(f).then(id => {
+    trackFile(keepFile(f)).then(id => {
       bankProofFileId = id;
       // The first letter uploaded for the main account is remembered, so every later claim
       // carries it without asking for it again. An account that already has one on file is
@@ -1580,6 +1631,8 @@
     el.addEventListener('input', () => el.classList.remove('field-error'))
   );
   const submitMsg = document.getElementById('submitMsg');
+  // True while a submission is holding for a receipt still being checked.
+  let waitingForChecks = false;
   document.getElementById('submitBtn').addEventListener('click', () => {
     let missing = 0;
     document.querySelectorAll('[data-required]').forEach(el => {
@@ -1612,6 +1665,49 @@
         : unproven.length + ' of your other claims have no proof attached. Every claim line needs its receipt or invoice before it can be submitted.';
       submitMsg.className = 'submit-msg err';
       return;
+    }
+
+    // A receipt is checked against the earlier claims as it is attached, and one already
+    // claimed is refused there. That check reads the file, which takes a moment, and a
+    // claim submitted inside that moment used to go through with a receipt that was
+    // already spent. So the rule is applied again here, where nothing is still in flight:
+    // a line still being checked waits, and a line whose slip belongs to another claim
+    // stops the submission.
+    const rows = [...otherBody.querySelectorAll('tr')].filter(otherRowHasContent);
+    // Pressing Submit the instant after attaching a slip is normal. Rather than refuse,
+    // hold the submission for the moment the checking and storing take, then carry on by
+    // itself. Submitting mid-flight saved the claim without its proof.
+    if (filesInFlight > 0 || rows.some(tr => tr.dataset.checking === '1')) {
+      if (waitingForChecks) return;   // already holding — one wait is enough
+      waitingForChecks = true;
+      submitMsg.textContent = 'Finishing with your attachments…';
+      submitMsg.className = 'submit-msg';
+      const deadline = Date.now() + 10000;
+      const tick = () => {
+        const still = filesInFlight > 0 ||
+          [...otherBody.querySelectorAll('tr')].some(tr => tr.dataset.checking === '1');
+        if (!still) { waitingForChecks = false; document.getElementById('submitBtn').click(); return; }
+        if (Date.now() > deadline) {
+          waitingForChecks = false;
+          submitMsg.textContent = 'A receipt is taking too long to check. Please attach it again.';
+          submitMsg.className = 'submit-msg err';
+          return;
+        }
+        setTimeout(tick, 60);
+      };
+      setTimeout(tick, 60);
+      return;
+    }
+    for (const tr of rows) {
+      const holder = tr.dataset.fileHash ? receiptHolder({ hash: tr.dataset.fileHash }, editingRef) : '';
+      if (holder) {
+        tr.classList.add('row-error');
+        switchTab('other');
+        tr.scrollIntoView({ block: 'center' });
+        submitMsg.textContent = 'The slip on one of your other claims is already on ' + holder + ', so it cannot be claimed again.';
+        submitMsg.className = 'submit-msg err';
+        return;
+      }
     }
 
     const data = collectClaim();
@@ -2255,7 +2351,10 @@
       || d.km.some(r => filled(r))
       || d.other.some(r => filled(r, ['currency'])));
   }
-  function saveDraft() {
+  async function saveDraft() {
+    // A draft saved a moment after attaching a slip used to be saved without it, and the
+    // slip was gone when the draft was reopened.
+    if (filesInFlight > 0) await filesSettled();
     const d = collectDraft();
     if (!draftHasContent(d)) { showToast('There is nothing to save yet — fill something in first.', 4000); return; }
     try {
