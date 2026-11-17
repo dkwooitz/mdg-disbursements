@@ -1,0 +1,41 @@
+# Code quality: ESLint (bugs) and Prettier (formatting) on every push to main and every PR.
+#
+# Both steps are report-only (continue-on-error) so adding this workflow cannot
+# break an existing build. Once the codebase is clean, delete the two
+# `continue-on-error: true` lines to make them enforcing.
+
+name: Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Prettier
+        run: npm run format:check
+        continue-on-error: true
